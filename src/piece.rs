@@ -1,19 +1,10 @@
 use std::{
-    fmt::{
-        self,
-        Display,
-        Formatter
-    },
+    fmt::{self, Display, Formatter},
     collections::HashMap,
-    sync::{
-        Arc,
-    },
+    sync::Arc,
     any::Any,
 };
-use rayon::prelude::{
-    ParallelIterator,
-    IntoParallelIterator
-};
+use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use regex::Regex;
 use lazy_static::lazy_static;
 use crate::BOARD_X_SIZE;
