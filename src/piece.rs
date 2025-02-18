@@ -8,7 +8,7 @@ use std::{
     sync::{
         Arc,
     },
-    any::Any
+    any::Any,
 };
 use rayon::prelude::{
     ParallelIterator,
@@ -20,6 +20,8 @@ use crate::BOARD_X_SIZE;
 
 // 2차원 벡터
 pub type VecXY<T> = Vec<Vec<T>>;
+pub type Board2D = BoardXD<2>;
+pub type Board3D = BoardXD<3>;
 
 lazy_static! {
     static ref PLAYER_INPUT_RE: Regex = Regex::new(
@@ -27,21 +29,21 @@ lazy_static! {
     ).unwrap();
 }
 
-/// 보드 정보를 위한 구조체.
+/// 칸의 기물 정보를 위한 구조체.
 #[derive(Clone, Debug, Default)]
-pub struct Board {
+pub struct Piece {
     color: Option<String>,
     piece_type: Option<String>,
     other: Option<Vec<String>>
 }
 
-impl Board {
-    pub fn new(color: Option<String>, piece_type: Option<String>, other: Option<Vec<String>>) -> Self {
+impl Piece {
+    fn new(color: Option<String>, piece_type: Option<String>, other: Option<Vec<String>>) -> Self {
         Self { color, piece_type, other }
     }
 }
 
-impl Display for Board {
+impl Display for Piece {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match (&self.color, &self.piece_type, &self.other) {
             (Some(color), None, None) => write!(f, "{}", color),
@@ -54,6 +56,23 @@ impl Display for Board {
             (None, None, None) => write!(f, "None")
         }
     }
+}
+
+/// 보드 저장시 차원의 제한을 헤제하기 위한 구조체.
+/// board_size: 보드의 크기.
+/// pieces: 특정 칸의 기물의 정보와 기타 정보를 담음.
+pub struct BoardXD<const D: usize> {
+    board_size: Vec<usize>,
+    pieces: HashMap<Vec<usize>, (Piece, Vec<String>)>
+}
+
+impl<const D: usize> BoardXD<D> {
+    pub fn new(board_size: Vec<usize>) -> Self {
+        if board_size.len() != D { panic!("Board{}D is not Board{}D!", D, D) }
+        BoardXD { board_size, pieces: HashMap::new() }
+    }
+
+    fn dimension() -> usize { D }
 }
 
 /// 기물의 움직임 가능성 표현을 위한 구조체.
@@ -81,10 +100,8 @@ impl Display for Board {
 ///
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug, Default)]
 pub struct MoveType {
-    cx: Option<usize>,
-    cy: Option<usize>,
-    x: Option<usize>,
-    y: Option<usize>,
+    c_positions: Option<Vec<usize>>,
+    positions: Option<Vec<usize>>,
     move_type: Option<String>,
     piece_type: Option<String>,
     color: Option<String>,
@@ -94,16 +111,16 @@ pub struct MoveType {
 }
 
 impl MoveType {
-    pub fn new(cx: Option<usize>, cy: Option<usize>, x: Option<usize>, y: Option<usize>,
-                      move_type: Option<String>, piece_type: Option<String>, color: Option<String>,
-                      takes_color: Option<String>, takes_piece_type: Option<String>, other: Option<Vec<String>>) -> Self {
-        Self { cx, cy, x, y, move_type, piece_type, color, takes_color, takes_piece_type, other }
+    pub fn new(c_positions: Option<Vec<usize>>, positions: Option<Vec<usize>>, move_type: Option<String>,
+               piece_type: Option<String>, color: Option<String>, takes_color: Option<String>,
+               takes_piece_type: Option<String>, other: Option<Vec<String>>) -> Self {
+        Self { c_positions, positions, move_type, piece_type, color, takes_color, takes_piece_type, other }
     }
 
     fn all_none(&self) -> bool {
-        self.cx == None && self.cy == None && self.x == None && self.y == None && self.move_type == None && self.piece_type == None && self.color == None && self.takes_color == None && self.takes_piece_type == None
+        self.c_positions == None && self.positions == None && self.move_type == None && self.piece_type == None && self.color == None && self.takes_color == None && self.takes_piece_type == None
     }
-    
+
     fn set_other(input: Option<Vec<String>>) -> Self {
         let mut move_type = Self::default();
         move_type.other = input;
@@ -142,8 +159,7 @@ impl MoveType {
 /// ```
 #[derive(Clone, Debug)]
 pub struct WalkType {
-    dx: isize,
-    dy: isize,
+    d_positions: Vec<isize>,
     times: usize,
     color: String,
     piece_type: String,
@@ -151,8 +167,8 @@ pub struct WalkType {
 }
 
 impl WalkType {
-    fn new(dx: isize, dy: isize, times: usize, color: String, piece_type: String, other: Vec<String>) -> Self {
-        Self { dx, dy, times, color, piece_type, other }
+    fn new(d_positions: Vec<isize>, times: usize, color: String, piece_type: String, other: Vec<String>) -> Self {
+        Self { d_positions, times, color, piece_type, other }
     }
 }
 
@@ -162,69 +178,57 @@ impl WalkType {
 /// - board: CalculateMoves가 계산 가능한 현재 board
 /// - piece_type: CalculateMoves가 계산 가능한 기물 종류들
 /// - piece_direction: CalculateMoves가 계산 사능한 이동 정의들
-struct CalculateMoves<'a> {
-    board: VecXY<Board>,
+struct CalculateMoves<'a, const D: usize> {
+    board: BoardXD<D>,
     piece_type: &'a Vec<String>,
     piece_direction: &'a Vec<WalkType>,
 }
 
-impl<'a> CalculateMoves<'a> {
-    fn new(board: VecXY<Board>, piece_type: &'a Vec<String>, piece_direction: &'a Vec<WalkType>) -> Self {
+impl<'a, const D: usize> CalculateMoves<'a, D> {
+    fn new(board: BoardXD<D>, piece_type: &'a Vec<String>, piece_direction: &'a Vec<WalkType>) -> Self {
         Self { board, piece_type, piece_direction }
     }
 
-    fn step(&self, x: usize, y: usize, walk_type: WalkType) -> MoveType {
-        if self.board.len() <= x || self.board[0].len() <= y {
-            // 보드 범위 초과.
-            MoveType::default()
-        }
-        else {
-            match (&self.board[x][y].color, &self.board[x][y].piece_type) {
-                // 이동 가능.
-                (None, None) if walk_type.other.contains(&"move".to_string()) => {
-                    MoveType::new(None, None, Some(x), Some(y), Some("m".to_string()), Some(walk_type.piece_type), Some(walk_type.color), None, None, Some(walk_type.other))
-                },
-                // 그 위치에 잡을 수 있는 기물 있음.
-                (Some(color), Some(piece_type)) if color != &walk_type.color && walk_type.other.contains(&"capture".to_string()) => {
-                    MoveType::new(None, None, Some(x), Some(y), Some("x".to_string()), Some(walk_type.piece_type), Some(walk_type.color), Some(color.clone()), Some(piece_type.clone()), Some(walk_type.other))
-                }
-                // 이동 불가.
-                _ => MoveType::default()
+    fn step(&self, positions: Vec<usize>, walk_type: WalkType) -> MoveType {
+        match &self.board.pieces.contains_key(&positions) {
+            false if walk_type.other.contains(&"move".to_string()) => {
+                MoveType::new(None, Some(positions), Some("m".to_string()), Some(walk_type.piece_type), Some(walk_type.color), None, None, Some(walk_type.other))
             }
+            true => {
+                let Some(piece) = &self.board.get(&positions);
+                MoveType::new(None, Some(positions),  Some("x".to_string()), Some(walk_type.piece_type), Some(walk_type.color), Some(piece.color.clone()), Some(piece.piece_type.clone()), Some(walk_type.other))
+            }
+            _ => MoveType::default()
         }
     }
 
-    fn walk(&self, cx: usize, cy: usize, walk_type: WalkType) -> Vec<MoveType> {
+    fn walk(&self, c_positions: Vec<usize>, walk_type: WalkType) -> Vec<MoveType> {
         let mut moves = Vec::new();
-        let (mut x, mut y) = (cx, cy);
+        let mut positions = c_positions;
         let jump = 0;
         for _ in 0..walk_type.times {
-            {
-                let (next_x, next_y) = (x as isize + walk_type.dx, y as isize + walk_type.dy);
-                if next_x < 0 || next_y < 0 {
-                    break;
-                }
-                (x, y) = (next_x as usize, next_y as usize);
+            let next_positions: Vec<_> = positions.into_iter().zip(walk_type.d_positions.clone()).map(|(x, dx)| x as isize + dx).collect();
+            if next_positions.iter().any(|x| x < &0) {
+                break
+            } else {
+                positions = next_positions.into_iter().map(|x| x as usize).collect();
             }
-            if self.board.len() <= x || self.board[0].len() <= y {
-                break;
-            }
-            if cx != x || cy != y {
-                let mut moving = self.step(x, y, walk_type.clone());
+            if c_positions.iter().zip(&positions).any(|(cx, x)| cx != x) {
+                let mut moving = self.step(positions.clone(), walk_type.clone());
                 match moving.all_none() {
                     true => {
                         if let Some(other) = moving.other {
                             if other.contains(&"jump_1".to_string()) && jump == 0 {
                                 continue
-                            } else { 
+                            } else {
                                 break
                             }
-                        } else { 
+                        } else {
                             break
                         }
                     },
                     false => {
-                        (moving.cx, moving.cy) = (Some(cx), Some(cy));
+                        moving.c_positions = Some(c_positions.clone());
                         moves.push(moving.clone());
                     }
                 }
@@ -233,14 +237,8 @@ impl<'a> CalculateMoves<'a> {
         moves
     }
 
-    fn piece(self: Arc<Self>, x: usize, y: usize) -> Vec<MoveType> {
-        // 이동 규칙에 맞는 이동을 전부 검사.
-        let Some(board_color) = &self.board[x][y].color else {
-            return Vec::new();
-        };
-        let Some(board_piece_type) = &self.board[x][y].piece_type else {
-            return Vec::new();
-        };
+    // 이동 규칙에 맞는 이동을 전부 검사.
+    fn piece(self: Arc<Self>, positions: Vec<usize>) -> Vec<MoveType> {
         // std::thread::spawn => into_par_iter()
         // for, if => filter_map()
         // extend() => flatten()
@@ -256,13 +254,10 @@ impl<'a> CalculateMoves<'a> {
     }
 
     fn board_piece_search(self: Arc<Self>) -> Vec<MoveType> {
-        (0..self.board.len()).into_par_iter().flat_map(|x| {
+        (&self.board).pieces.keys().flat_map(|x| {
             let self_clone = Arc::clone(&self);
-            (0..self.board[0].len()).into_par_iter().flat_map(move |y| {
-                let self_clone_clone = Arc::clone(&self_clone);
-                self_clone_clone.piece(x, y)
-            })
-        }).collect::<Vec<_>>()
+            self_clone.piece(x.clone())
+        }).collect()
     }
 
     fn search_piece(self: Arc<Self>, deep: usize) -> CanMove {
@@ -285,14 +280,14 @@ impl<'a> CalculateMoves<'a> {
         }
         CanMove::CanMoves((self.board.clone(), output))
     }
-    
-    pub fn piece_moved(&self, move_type: MoveType) -> VecXY<Board> {
+
+    fn piece_moved(&self, move_type: MoveType) -> VecXY<Piece> {
         let mut buffer = self.board.clone();
         if let (Some(cx), Some(cy), Some(x), Some(y)) =
             (move_type.cx, move_type.cy, move_type.x, move_type.y)
         {
             buffer[x][y] = buffer[cx][cy].clone();
-            buffer[cx][cy] = Board::new(None, None, None);
+            buffer[cx][cy] = Piece::new(None, None, None);
             buffer
         } else {
             buffer
@@ -301,14 +296,14 @@ impl<'a> CalculateMoves<'a> {
 }
 
 pub struct MainCalculate {
-    board: VecXY<Board>,
+    board: VecXY<Piece>,
     piece_type: Vec<String>,
     piece_direction: Vec<WalkType>,
     pub save_moves: CanMove
 }
 
 impl MainCalculate {
-    pub fn new(board: VecXY<Board>, piece_type: Vec<String>, piece_direction: Vec<WalkType>) -> Self {
+    pub fn new(board: VecXY<Piece>, piece_type: Vec<String>, piece_direction: Vec<WalkType>) -> Self {
         let save_moves = CanMove::None;
         Self { board, piece_type, piece_direction, save_moves }
     }
@@ -318,11 +313,11 @@ impl MainCalculate {
             (move_type.cx, move_type.cy, move_type.x, move_type.y)
         {
             (*self.board)[x][y] = self.board[cx][cy].clone();
-            self.board[cx][cy] = Board::default();
+            self.board[cx][cy] = Piece::default();
         }
     }
 
-    pub fn piece_moved(&self, move_type: MoveType) -> VecXY<Board> {
+    pub fn piece_moved(&self, move_type: MoveType) -> VecXY<Piece> {
         CalculateMoves::new(self.board.clone(), &self.piece_type, &self.piece_direction).piece_moved(move_type)
     }
 
@@ -330,7 +325,7 @@ impl MainCalculate {
         let calculate = Arc::new(CalculateMoves::new(self.board.clone(), &self.piece_type, &self.piece_direction));
         self.save_moves = calculate.search_piece(deep);
     }
-    
+
     pub fn calculate_moved(&self, deep: usize) -> CanMove {
         let calculate = Arc::new(CalculateMoves::new(self.board.clone(), &self.piece_type, &self.piece_direction));
         calculate.search_piece(deep)
@@ -348,9 +343,9 @@ impl Default for MainCalculate {
 }
 
 /// 수 추적 및 통신을 위한 열거형
-/// 
+///
 /// 이 열거형은 게임 상태를 추적하고, 수의 연쇄적 진행을 관리하는 데 사용됩니다.
-/// 
+///
 /// 필드 설명:
 /// - `CanMoves`: 수 추적의 트리 구조. 이 변형은 가능한 모든 이동들을 추적하는 해시맵을 포함하고 있으며,
 ///   빈 해시맵을 사용하여 수 추적을 일시적으로 중단할 수 있습니다.
@@ -363,20 +358,20 @@ impl Default for MainCalculate {
 /// - `None`: 기본값을 나타낼 때 사용됩니다. 기본값을 설정할 때 사용됩니다.
 #[derive(Clone, Debug, Default)]
 pub enum CanMove {
-    CanMoves((VecXY<Board>, HashMap<MoveType, Box<Self>>)),
-    Board(VecXY<Board>),
+    CanMoves((VecXY<Piece>, HashMap<MoveType, Box<Self>>)),
+    Board(VecXY<Piece>),
     #[default] None
 }
 
 impl CanMove {
-    pub fn as_can_moves(&self) -> Option<&(VecXY<Board>, HashMap<MoveType, Box<Self>>)> {
+    pub fn as_can_moves(&self) -> Option<&(VecXY<Piece>, HashMap<MoveType, Box<Self>>)> {
         match self {
             Self::CanMoves(moves) => Some(moves),
             _ => None
         }
     }
-    
-    pub fn as_board(&self) -> Option<&VecXY<Board>> {
+
+    pub fn as_board(&self) -> Option<&VecXY<Piece>> {
         match self {
             Self::Board(board) => Some(board),
             _ => None,
@@ -384,7 +379,7 @@ impl CanMove {
     }
 
     pub fn as_value(&self) -> Option<&dyn Any> {
-        match self { 
+        match self {
             Self::CanMoves(moves) => Some(moves),
             Self::Board(board) => Some(board),
             _ => None
@@ -392,33 +387,33 @@ impl CanMove {
     }
 }
 
-pub fn default_board() -> VecXY<Board> {
+pub fn default_board() -> VecXY<Piece> {
     vec![
         vec![
-            Board::new(Some("black".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("black".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("black".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("black".to_string()), Some("queen".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("black".to_string()), Some("king".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])),
-            Board::new(Some("black".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("black".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("black".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()]))
+            Piece::new(Some("black".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("black".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("black".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("black".to_string()), Some("queen".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("black".to_string()), Some("king".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])),
+            Piece::new(Some("black".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("black".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("black".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()]))
         ],
-        vec![Board::new(Some("black".to_string()), Some("pawn".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])); 8],
-        vec![Board::default(); 8],
-        vec![Board::default(); 8],
-        vec![Board::default(); 8],
-        vec![Board::default(); 8],
-        vec![Board::new(Some("white".to_string()), Some("pawn".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])); 8],
+        vec![Piece::new(Some("black".to_string()), Some("pawn".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])); 8],
+        vec![Piece::default(); 8],
+        vec![Piece::default(); 8],
+        vec![Piece::default(); 8],
+        vec![Piece::default(); 8],
+        vec![Piece::new(Some("white".to_string()), Some("pawn".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])); 8],
         vec![
-            Board::new(Some("white".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("white".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("white".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("white".to_string()), Some("queen".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("white".to_string()), Some("king".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])),
-            Board::new(Some("white".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("white".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
-            Board::new(Some("white".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()]))
+            Piece::new(Some("white".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("white".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("white".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("white".to_string()), Some("queen".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("white".to_string()), Some("king".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])),
+            Piece::new(Some("white".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("white".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])),
+            Piece::new(Some("white".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()]))
         ],
     ]
 }
@@ -429,100 +424,100 @@ pub fn default_piece_type() -> Vec<String> {
 
 pub fn default_piece_move() -> Vec<WalkType> {
     vec![
-        WalkType::new(-1, 0, 1, "white".to_string(), "pawn".to_string(), vec!["move".to_string(), "promotion".to_string()]),
-        WalkType::new(-1, -1, 1, "white".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
-        WalkType::new(-1, 1, 1, "white".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![-1, 0], 1, "white".to_string(), "pawn".to_string(), vec!["move".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![-1, -1], 1, "white".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![-1, 1], 1, "white".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
 
-        WalkType::new(1, 0, 1, "black".to_string(), "pawn".to_string(), vec!["move".to_string(), "promotion".to_string()]),
-        WalkType::new(1, -1, 1, "black".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
-        WalkType::new(1, 1, 1, "black".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
-
-
-        WalkType::new(2, 1, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(2, -1, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, -2, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, -2, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-2, -1, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-2, 1, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 2, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, 2, 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-
-        WalkType::new(2, 1, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(2, -1, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, -2, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, -2, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-2, -1, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-2, 1, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 2, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, 2, 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, 0], 1, "black".to_string(), "pawn".to_string(), vec!["move".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![1, -1], 1, "black".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![1, 1], 1, "black".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
 
 
-        WalkType::new(1, 1, usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, -1, usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, -1, usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 1, usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![2, 1], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![2, -1], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, -2], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, -2], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-2, -1], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-2, 1], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 2], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, 2], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
 
-        WalkType::new(1, 1, usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, -1, usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, -1, usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 1, usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
-
-
-        WalkType::new(1, 0, usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, -1, usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 0, usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, 1, usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
-
-        WalkType::new(1, 0, usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, -1, usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 0, usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, 1, usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![2, 1], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![2, -1], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, -2], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, -2], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-2, -1], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-2, 1], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 2], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, 2], 1, "black".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),
 
 
-        WalkType::new(1, 1, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, 0, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, -1, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, -1, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, -1, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 0, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 1, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, 1, usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, 1], usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, -1], usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, -1], usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 1], usize::MAX, "white".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
 
-        WalkType::new(1, 1, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, 0, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(1, -1, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, -1, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, -1, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 0, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(-1, 1, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
-        WalkType::new(0, 1, usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, 1], usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, -1], usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, -1], usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 1], usize::MAX, "black".to_string(), "bishop".to_string(), vec!["move".to_string(), "capture".to_string()]),
 
 
-        WalkType::new(1, 1, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(1, 0, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(1, -1, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(0, -1, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(-1, -1, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(-1, 0, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(-1, 1, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(0, 1, 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![1, 0], usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, -1], usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 0], usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, 1], usize::MAX, "white".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
 
-        WalkType::new(1, 1, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(1, 0, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(1, -1, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(0, -1, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(-1, -1, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(-1, 0, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(-1, 1, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
-        WalkType::new(0, 1, 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![1, 0], usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, -1], usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 0], usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, 1], usize::MAX, "black".to_string(), "rook".to_string(), vec!["move".to_string(), "capture".to_string()]),
+
+
+        WalkType::new(vec![1, 1], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, 0], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, -1], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, -1], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, -1], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 0], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 1], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, 1], usize::MAX, "white".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+
+        WalkType::new(vec![1, 1], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, 0], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![1, -1], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, -1], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, -1], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 0], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![-1, 1], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+        WalkType::new(vec![0, 1], usize::MAX, "black".to_string(), "queen".to_string(), vec!["move".to_string(), "capture".to_string()]),
+
+
+        WalkType::new(vec![1, 1], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![1, 0], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![1, -1], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![0, -1], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![-1, -1], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![-1, 0], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![-1, 1], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![0, 1], 1, "white".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+
+        WalkType::new(vec![1, 1], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![1, 0], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![1, -1], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![0, -1], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![-1, -1], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![-1, 0], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![-1, 1], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
+        WalkType::new(vec![0, 1], 1, "black".to_string(), "king".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()]),
     ]
 }
 
-pub fn default_setting() -> (VecXY<Board>, Vec<String>, Vec<WalkType>) {
+pub fn default_setting() -> (VecXY<Piece>, Vec<String>, Vec<WalkType>) {
     (default_board(), default_piece_type(), default_piece_move())
 }
 
-fn custom_calculate_moved(board: VecXY<Board>, piece_type: Vec<String>, piece_direction: Vec<WalkType>, deep: usize) -> CanMove {
+fn custom_calculate_moved(board: VecXY<Piece>, piece_type: Vec<String>, piece_direction: Vec<WalkType>, deep: usize) -> CanMove {
     MainCalculate::new(board, piece_type, piece_direction).calculate_moved(deep)
 }
 
@@ -560,13 +555,13 @@ pub fn check_move(moves: Vec<&MoveType>, player_input: String) -> Option<Vec<Mov
                 can_moves.push(move_type);
             }
         }
-        
+
         Some(can_moves.into_iter().map(|move_type| move_type.clone()).collect())
     } else {
         Some(vec![MoveType::set_other(Some(vec![player_input]))])
     }
 }
 
-fn custom_check_move(board: VecXY<Board>, piece_type: Vec<String>, piece_move: Vec<WalkType>, player_input: String) -> Option<Vec<MoveType>> {
+fn custom_check_move(board: VecXY<Piece>, piece_type: Vec<String>, piece_move: Vec<WalkType>, player_input: String) -> Option<Vec<MoveType>> {
     check_move(custom_calculate_moved(board, piece_type, piece_move, 1).as_can_moves().unwrap().1.keys().collect(), player_input)
 }
