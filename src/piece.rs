@@ -38,13 +38,13 @@ trait CheckMove<const D: usize> {
 /// 칸의 기물 정보를 위한 구조체.
 #[derive(Clone, Debug, Default)]
 pub struct Piece {
-    color: Option<String>,
-    piece_type: Option<String>,
-    other: Option<Vec<String>>
+    color: String,
+    piece_type: String,
+    other: HashMap<String, Vec<String>>
 }
 
 impl Piece {
-    fn new(color: Option<String>, piece_type: Option<String>, other: Option<Vec<String>>) -> Self {
+    fn new(color: String, piece_type: String, other: HashMap<String, Vec<String>>) -> Self {
         Self { color, piece_type, other }
     }
 }
@@ -70,7 +70,7 @@ impl Display for Piece {
 #[derive(Clone, Debug, Dimension)]
 pub struct BoardXD<const D: usize> {
     board_size: Vec<usize>,
-    pieces: HashMap<Vec<usize>, (Piece, Vec<String>)>
+    pieces: HashMap<Vec<usize>, (Piece, HashMap<String, Vec<String>>)>
 }
 
 impl<const D: usize> BoardXD<D> {
@@ -179,11 +179,11 @@ pub struct WalkType<const D: usize> {
     times: usize,
     color: String,
     piece_type: String,
-    other: Vec<String>
+    other: HashMap<String, Vec<String>>
 }
 
 impl<const D: usize> WalkType<D> {
-    fn new(d_positions: Vec<isize>, times: usize, color: String, piece_type: String, other: Vec<String>) -> Self {
+    fn new(d_positions: Vec<isize>, times: usize, color: String, piece_type: String, other: HashMap<String, Vec<String>>) -> Self {
         Self { d_positions, times, color, piece_type, other }
     }
 }
@@ -429,31 +429,33 @@ impl<const D: usize> CanMove<D> {
 }
 
 pub fn default_board() -> Board2D {
-    let white_pawn = (Piece::new(Some("white".to_string()), Some("pawn".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])), vec![]);
-    let black_pawn = (Piece::new(Some("black".to_string()), Some("pawn".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])), vec![]);
+    let white_pawn = (Piece::new("white".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])])), vec![]);
+    let black_pawn = (Piece::new("black".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])])), vec![]);
+    let attributes = HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string()])]);
+    let king_attributes = HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])]);
     
     Board2D::new(
         vec![8, 8], 
         HashMap::from(
             [
-                (vec![0, 0], (Piece::new(Some("black".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![0, 1], (Piece::new(Some("black".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![0, 2], (Piece::new(Some("black".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![0, 3], (Piece::new(Some("black".to_string()), Some("queen".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![0, 4], (Piece::new(Some("black".to_string()), Some("king".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])), vec![])),
-                (vec![0, 5], (Piece::new(Some("black".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![0, 6], (Piece::new(Some("black".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![0, 7], (Piece::new(Some("black".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
+                (vec![0, 0], (Piece::new("black".to_string(), "rook".to_string(), attributes.clone()), vec![])),
+                (vec![0, 1], (Piece::new("black".to_string(), "knight".to_string(), attributes.clone()), vec![])),
+                (vec![0, 2], (Piece::new("black".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
+                (vec![0, 3], (Piece::new("black".to_string(), "queen".to_string(), attributes.clone()), vec![])),
+                (vec![0, 4], (Piece::new("black".to_string(), "king".to_string(), king_attributes.clone()), vec![])),
+                (vec![0, 5], (Piece::new("black".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
+                (vec![0, 6], (Piece::new("black".to_string(), "knight".to_string(), attributes.clone()), vec![])),
+                (vec![0, 7], (Piece::new("black".to_string(), "rook".to_string(), attributes.clone()), vec![])),
                 (vec![1, 0], black_pawn.clone()), (vec![1, 1], black_pawn.clone()), (vec![1, 2], black_pawn.clone()), (vec![1, 3], black_pawn.clone()), (vec![1, 4], black_pawn.clone()), (vec![1, 5], black_pawn.clone()), (vec![1, 6], black_pawn.clone()), (vec![1, 7], black_pawn),
                 (vec![6, 0], white_pawn.clone()), (vec![6, 1], white_pawn.clone()), (vec![6, 2], white_pawn.clone()), (vec![6, 3], white_pawn.clone()), (vec![6, 4], white_pawn.clone()), (vec![6, 5], white_pawn.clone()), (vec![6, 6], white_pawn.clone()), (vec![6, 7], white_pawn),
-                (vec![7, 0], (Piece::new(Some("white".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![7, 1], (Piece::new(Some("white".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![7, 2], (Piece::new(Some("white".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![7, 3], (Piece::new(Some("white".to_string()), Some("queen".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![7, 4], (Piece::new(Some("white".to_string()), Some("king".to_string()), Some(vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])), vec![])),
-                (vec![7, 5], (Piece::new(Some("white".to_string()), Some("bishop".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![7, 6], (Piece::new(Some("white".to_string()), Some("knight".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![])),
-                (vec![7, 7], (Piece::new(Some("white".to_string()), Some("rook".to_string()), Some(vec!["move".to_string(), "capture".to_string()])), vec![]))
+                (vec![7, 0], (Piece::new("white".to_string(), "rook".to_string(), attributes.clone()), vec![])),
+                (vec![7, 1], (Piece::new("white".to_string(), "knight".to_string(), attributes.clone()), vec![])),
+                (vec![7, 2], (Piece::new("white".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
+                (vec![7, 3], (Piece::new("white".to_string(), "queen".to_string(), attributes.clone()), vec![])),
+                (vec![7, 4], (Piece::new("white".to_string(), "king".to_string(), king_attributes), vec![])),
+                (vec![7, 5], (Piece::new("white".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
+                (vec![7, 6], (Piece::new("white".to_string(), "knight".to_string(), attributes.clone()), vec![])),
+                (vec![7, 7], (Piece::new("white".to_string(), "rook".to_string(), attributes), vec![]))
             ]
         )
     )
