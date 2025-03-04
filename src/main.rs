@@ -12,6 +12,7 @@ use piece::{
     check_move,
     Board2D
 };
+use crate::piece::BoardXD;
 
 static mut BOARD_X_SIZE: usize = 0;
 static mut BOARD_Y_SIZE: usize = 0;
@@ -26,7 +27,7 @@ fn main() {
     result.calculate_move(0);
     let a = result.save_moves.as_can_moves().unwrap().1.keys().collect::<Vec<_>>();
 
-    let board = Board2D::new(Vec::from([unsafe { BOARD_X_SIZE }, unsafe { BOARD_Y_SIZE }]));
+    let board = Board2D::default();
 
     let mut reader = stdin().lock().lines().map(|a| a.unwrap());
     println!("{:?}", a);
