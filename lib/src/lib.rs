@@ -52,3 +52,29 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     gen.into()
 }
+/*
+use syn::{GenericParam, Type, parse_quote};
+
+fn is_usize(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.first() {
+            return segment.ident == "usize";
+        }
+    }
+    false
+}
+
+fn main() {
+    let generics: syn::Generics = parse_quote! {
+        <T, const N: usize, const M: i32>
+    };
+
+    for param in &generics.params {
+        if let GenericParam::Const(const_param) = param {
+            if is_usize(&const_param.ty) {
+                println!("Found usize const param: {}", const_param.ident);
+            }
+        }
+    }
+}
+*/
