@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, parse_macro_input, GenericParam, Error};
+use syn::{DeriveInput, parse_macro_input, GenericParam, Error, Type};
 
 #[proc_macro_derive(Dimension)]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -22,12 +22,16 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let gen = {
         let target_const_params: Vec<_> = const_params.iter().filter_map(|x| {
             let const_param_name = x.ident.to_string();
-            let const_param_type = x. 
-            if const_param_name == "D".to_string() {
-                Some(x)
-            } else {
-                None
+            if let Type::Path(type_path) = x.ty {
+                if let Some(segment) = type.path.segments.first() {
+                    if segment.idnet == "usize" {
+                        if const_param_name == "D".to_string() {
+                            Some(x)
+                        }
+                    }
+                }
             }
+            None
         }).collect();
         match target_const_params.len() {
             0 => return Error::new_spanned(&ast, "const D: usize가 없음 만들어 시키야").to_compile_error().into(),
