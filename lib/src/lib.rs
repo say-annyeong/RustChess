@@ -23,8 +23,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let target_const_params: Vec<_> = const_params.iter().filter_map(|x| {
             let const_param_name = x.ident.to_string();
             if let Type::Path(type_path) = &x.ty {
-                if let Some(segment) = type_path.segments.first() {
-                    if segment.idnet == "usize" {
+                if let Some(segment) = type_path.path.segments.first() {
+                    if segment.ident == "usize" {
                         if const_param_name == "D".to_string() {
                             Some(x)
                         }
