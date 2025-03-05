@@ -8,6 +8,7 @@ use std::{
     any::Any,
 };
 use std::arch::x86_64::_mm_castpd_ps;
+use std::ops::Deref;
 use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use regex::Regex;
 use lazy_static::lazy_static;
@@ -51,22 +52,24 @@ impl Piece {
 
 impl Display for Piece {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match (&self.color, &self.piece_type, &self.other) {
-            (Some(color), None, None) => write!(f, "{}", color),
-            (None, Some(piece_type), None) => write!(f, "{}", piece_type),
-            (Some(color), Some(piece_type), None) => write!(f, "{}{}", color, piece_type),
-            (None, None, Some(other)) => write!(f, "{:?}", other),
-            (Some(color), None, Some(other)) => write!(f, "{}{:?}", color, other),
-            (None, Some(piece_type), Some(other)) => write!(f, "{}{:?}", piece_type, other),
-            (Some(color), Some(piece_type), Some(other)) => write!(f, "{}{}{:?}", color, piece_type, other),
-            (None, None, None) => write!(f, "None")
+        let mut short_names = self.other.get("short_name").unwrap_or_else(|| &vec![self.piece_type.clone()]);
+        let mut short_color_names = self.other.get("short_color_name").unwrap_or_else(|| &vec![self.color.clone()]);
+        if short_names.len() > 1 {
+            short_names.sort();
         }
+        if short_color_names.len() > 1 {
+            short_color_names.sort();
+        }
+        let short_name = &short_names[0];
+        let short_color_name = &short_color_names[0];
+        write!(f, "{}{}", short_color_name, short_name)
     }
 }
 
 /// 보드 저장시 차원의 제한을 헤제하기 위한 구조체.
 /// board_size: 보드의 크기.
 /// pieces: 특정 칸의 기물의 정보와 기타 정보를 담음.
+/// positions 해당하는 Vec<usize>는 x, y, z 순서.
 #[derive(Clone, Debug, Dimension)]
 pub struct BoardXD<const D: usize> {
     board_size: Vec<usize>,
@@ -74,7 +77,7 @@ pub struct BoardXD<const D: usize> {
 }
 
 impl<const D: usize> BoardXD<D> {
-    pub fn new(board_size: Vec<usize>, pieces: HashMap<Vec<usize>, (Piece, Vec<String>)>) -> Self {
+    pub fn new(board_size: Vec<usize>, pieces: HashMap<Vec<usize>, (Piece, HashMap<String, Vec<String>>)>) -> Self {
         let dimensions = board_size.len();
         if dimensions != D { panic!("Board{}D is not Board{}D!", dimensions, D) }
         BoardXD { board_size, pieces }
@@ -119,13 +122,13 @@ pub struct MoveType<const D: usize> {
     color: Option<String>,
     takes_color: Option<String>,
     takes_piece_type: Option<String>,
-    other: Option<Vec<String>>
+    other: Option<HashMap<String, Vec<String>>>
 }
 
 impl<const D: usize> MoveType<D> {
     pub fn new(c_positions: Option<Vec<usize>>, positions: Option<Vec<usize>>, move_type: Option<String>,
                piece_type: Option<String>, color: Option<String>, takes_color: Option<String>,
-               takes_piece_type: Option<String>, other: Option<Vec<String>>) -> Self {
+               takes_piece_type: Option<String>, other: Option<HashMap<String, Vec<String>>>) -> Self {
         Self { c_positions, positions, move_type, piece_type, color, takes_color, takes_piece_type, other }
     }
 
@@ -133,13 +136,13 @@ impl<const D: usize> MoveType<D> {
         self.c_positions == None && self.positions == None && self.move_type == None && self.piece_type == None && self.color == None && self.takes_color == None && self.takes_piece_type == None
     }
 
-    fn other(input: Option<Vec<String>>) -> Self {
+    fn other(input: Option<HashMap<String, Vec<String>>>) -> Self {
         let mut move_type = Self::default();
         move_type.other = input;
         move_type
     }
 
-    fn set_other(&mut self, input: Option<Vec<String>>) {
+    fn set_other(&mut self, input: Option<HashMap<String, Vec<String>>>) {
         self.other = input;
     }
 }
@@ -238,7 +241,8 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
             match moving.all_none_as_except_other() {
                 true => {
                     if let Some(other) = moving.other {
-                        if other.contains(&"jump_1".to_string()) && jump == 0 {
+                        let Some(attribute) = other.get(&"attribute");
+                        if attribute.contains(&"jump_1".to_string()) && jump == 0 {
                             jump += 1;
                             continue
                         } else {
@@ -429,8 +433,8 @@ impl<const D: usize> CanMove<D> {
 }
 
 pub fn default_board() -> Board2D {
-    let white_pawn = (Piece::new("white".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])])), vec![]);
-    let black_pawn = (Piece::new("black".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])])), vec![]);
+    let white_pawn = Piece::new("white".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])]));
+    let black_pawn = Piece::new("black".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "promotion".to_string()])]));
     let attributes = HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string()])]);
     let king_attributes = HashMap::from([("attributes".to_string(), vec!["move".to_string(), "capture".to_string(), "check".to_string(), "threatened".to_string(), "checkmate".to_string()])]);
     
@@ -438,24 +442,24 @@ pub fn default_board() -> Board2D {
         vec![8, 8], 
         HashMap::from(
             [
-                (vec![0, 0], (Piece::new("black".to_string(), "rook".to_string(), attributes.clone()), vec![])),
-                (vec![0, 1], (Piece::new("black".to_string(), "knight".to_string(), attributes.clone()), vec![])),
-                (vec![0, 2], (Piece::new("black".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
-                (vec![0, 3], (Piece::new("black".to_string(), "queen".to_string(), attributes.clone()), vec![])),
-                (vec![0, 4], (Piece::new("black".to_string(), "king".to_string(), king_attributes.clone()), vec![])),
-                (vec![0, 5], (Piece::new("black".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
-                (vec![0, 6], (Piece::new("black".to_string(), "knight".to_string(), attributes.clone()), vec![])),
-                (vec![0, 7], (Piece::new("black".to_string(), "rook".to_string(), attributes.clone()), vec![])),
+                (vec![0, 0], (Piece::new("black".to_string(), "rook".to_string(), attributes.clone()), HashMap::new())),
+                (vec![0, 1], (Piece::new("black".to_string(), "knight".to_string(), attributes.clone()), HashMap::new())),
+                (vec![0, 2], Piece::new("black".to_string(), "bishop".to_string(), attributes.clone())),
+                (vec![0, 3], Piece::new("black".to_string(), "queen".to_string(), attributes.clone())),
+                (vec![0, 4], Piece::new("black".to_string(), "king".to_string(), king_attributes.clone())),
+                (vec![0, 5], Piece::new("black".to_string(), "bishop".to_string(), attributes.clone())),
+                (vec![0, 6], Piece::new("black".to_string(), "knight".to_string(), attributes.clone())),
+                (vec![0, 7], Piece::new("black".to_string(), "rook".to_string(), attributes.clone())),
                 (vec![1, 0], black_pawn.clone()), (vec![1, 1], black_pawn.clone()), (vec![1, 2], black_pawn.clone()), (vec![1, 3], black_pawn.clone()), (vec![1, 4], black_pawn.clone()), (vec![1, 5], black_pawn.clone()), (vec![1, 6], black_pawn.clone()), (vec![1, 7], black_pawn),
                 (vec![6, 0], white_pawn.clone()), (vec![6, 1], white_pawn.clone()), (vec![6, 2], white_pawn.clone()), (vec![6, 3], white_pawn.clone()), (vec![6, 4], white_pawn.clone()), (vec![6, 5], white_pawn.clone()), (vec![6, 6], white_pawn.clone()), (vec![6, 7], white_pawn),
-                (vec![7, 0], (Piece::new("white".to_string(), "rook".to_string(), attributes.clone()), vec![])),
-                (vec![7, 1], (Piece::new("white".to_string(), "knight".to_string(), attributes.clone()), vec![])),
-                (vec![7, 2], (Piece::new("white".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
-                (vec![7, 3], (Piece::new("white".to_string(), "queen".to_string(), attributes.clone()), vec![])),
-                (vec![7, 4], (Piece::new("white".to_string(), "king".to_string(), king_attributes), vec![])),
-                (vec![7, 5], (Piece::new("white".to_string(), "bishop".to_string(), attributes.clone()), vec![])),
-                (vec![7, 6], (Piece::new("white".to_string(), "knight".to_string(), attributes.clone()), vec![])),
-                (vec![7, 7], (Piece::new("white".to_string(), "rook".to_string(), attributes), vec![]))
+                (vec![7, 0], Piece::new("white".to_string(), "rook".to_string(), attributes.clone())),
+                (vec![7, 1], Piece::new("white".to_string(), "knight".to_string(), attributes.clone())),
+                (vec![7, 2], Piece::new("white".to_string(), "bishop".to_string(), attributes.clone())),
+                (vec![7, 3], Piece::new("white".to_string(), "queen".to_string(), attributes.clone())),
+                (vec![7, 4], Piece::new("white".to_string(), "king".to_string(), king_attributes)),
+                (vec![7, 5], Piece::new("white".to_string(), "bishop".to_string(), attributes.clone())),
+                (vec![7, 6], Piece::new("white".to_string(), "knight".to_string(), attributes.clone())),
+                (vec![7, 7], Piece::new("white".to_string(), "rook".to_string(), attributes))
             ]
         )
     )
@@ -467,13 +471,17 @@ pub fn default_piece_type() -> Vec<String> {
 
 pub fn default_piece_move() -> Vec<WalkType2D> {
     vec![
-        WalkType::new(vec![-1, 0], 1, "white".to_string(), "pawn".to_string(), vec!["move".to_string(), "promotion".to_string()]),
-        WalkType::new(vec![-1, -1], 1, "white".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
-        WalkType::new(vec![-1, 1], 1, "white".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![0, -1], 1, "white".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("move_type".to_string(), vec!["move".to_string()])])),
+        WalkType::new(vec![1, -1], 1, "white".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("move_type".to_string(), vec!["capture".to_string()])])),
+        WalkType::new(vec![-1, -1], 1, "white".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("move_type".to_string(), vec!["capture".to_string()])])),
 
-        WalkType::new(vec![1, 0], 1, "black".to_string(), "pawn".to_string(), vec!["move".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![0, -1], 1, "black".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("move_type".to_string(), vec!["move".to_string()])])),
+        WalkType::new(vec![1, -1], 1, "black".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("move_type".to_string(), vec!["capture".to_string()])])),
+        WalkType::new(vec![-1, -1], 1, "black".to_string(), "pawn".to_string(), HashMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("move_type".to_string(), vec!["capture".to_string()])])),
+
+        WalkType::new(vec![0, -1], 1, "black".to_string(), "pawn".to_string(), vec!["move".to_string(), "promotion".to_string()]),
         WalkType::new(vec![1, -1], 1, "black".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
-        WalkType::new(vec![1, 1], 1, "black".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
+        WalkType::new(vec![-1, -1], 1, "black".to_string(), "pawn".to_string(), vec!["capture".to_string(), "promotion".to_string()]),
 
 
         WalkType::new(vec![2, 1], 1, "white".to_string(), "knight".to_string(), vec!["move".to_string(), "capture".to_string()]),

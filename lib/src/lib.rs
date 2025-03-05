@@ -31,12 +31,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
         match target_const_params.len() {
             0 => return Error::new_spanned(&ast, "상수 제너릭 D가 없음 만들어 시키야").to_compile_error().into(),
             1 => {
-                macro_rules! in_ref {
-                    ($input:expr) => {
-                        $input.into_iter().map(|x| x.clone()).collect()
-                    };
-                }
-                let (life_params, type_params, const_params): (Vec<_>, Vec<_>, Vec<_>) = (in_ref!(life_params), in_ref!(type_params), in_ref!(const_params.clone()));
                 let target_param_ident = &target_const_params[0].ident;
                 let life_params_ident: Vec<_> = life_params.iter().map(|x| &x.lifetime).collect();
                 let type_params_ident: Vec<_> = type_params.iter().map(|x| &x.ident).collect();
