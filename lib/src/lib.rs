@@ -24,10 +24,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
             let const_param_name = x.ident.to_string();
             let Type:Path(type_path) = &x.ty else {
                 return None
-            }
+            };
             let Some(segment) = type_path.path.segments.first() else {
                 return None
-            }
+            };
             if segment.ident == "usize" && const_param_name == "D".to_string() {
                 Some(x)
             } else {
@@ -39,11 +39,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     if segment.ident == "usize" {
                         if const_param_name == "D".to_string() {
                             Some(x)
+                        } else {
+                            None
                         }
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
+            } else {
+                None
             }
-            None
             */
         }).collect();
         match target_const_params.len() {
