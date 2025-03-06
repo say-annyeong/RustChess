@@ -22,6 +22,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let gen = {
         let target_const_params: Vec<_> = const_params.iter().filter_map(|x| {
             let const_param_name = x.ident.to_string();
+            let Type:Path(type_path) = &x.ty else {
+                return None
+            }
+            let Some(segment) = type_path.path.segments.first() else {
+                return None
+            }
+            if segment.ident == "usize" && const_param_name == "D".to_string() {
+                Some(x)
+            } else {
+                None
+            }
+            /*
             if let Type::Path(type_path) = &x.ty {
                 if let Some(segment) = type_path.path.segments.first() {
                     if segment.ident == "usize" {
@@ -32,6 +44,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 }
             }
             None
+            */
         }).collect();
         match target_const_params.len() {
             0 => return Error::new_spanned(&ast, "const D: usize가 없음 만들어 시키야").to_compile_error().into(),
