@@ -459,7 +459,10 @@ pub fn default_board() -> Board2D {
                 (vec![0, 5], white_bishop, HashMap::new()),
                 (vec![0, 6], white_knight, HashMap::new()),
                 (vec![0, 7], white_rook, HashMap::new()),
-                (vec![1, 0], white_pawn.clone(), HashMap::new()), (vec![1, 1], white_pawn.clone(), HashMap::new()), (vec![1, 2], white_pawn.clone(), HashMap::new()), (vec![1, 3], white_pawn.clone(), HashMap::new()), (vec![1, 4], white_pawn.clone(), HashMap::new()), (vec![1, 5], white_pawn.clone(), HashMap::new()), (vec![1, 6], white_pawn.clone(), HashMap::new()), (vec![1, 7], white_pawn.clone(), HashMap::new()),
+                (vec![1, 0], white_pawn.clone(), HashMap::new()), (vec![1, 1], white_pawn.clone(), HashMap::new()), (vec![1, 2], white_pawn.clone(), HashMap::new()), (vec![1, 3], white_pawn.clone(), HashMap::new()), (vec![1, 4], white_pawn.clone(), HashMap::new()), (vec![1, 5], white_pawn.clone(), HashMap::new()), (vec![1, 6], white_pawn.clone(), HashMap::new()), (vec![1, 7], white_pawn, HashMap::new()),
+                (vec![6, 0], black_pawn.clone(), HashMap::new()), (vec![6, 1], black_pawn.clone(), HashMap::new()), (vec![6, 2], black_pawn.clone(), HashMap::new()), (vec![6, 3], black_pawn.clone(), HashMap::new()), (vec![6, 4], black_pawn.clone(), HashMap::new()), (vec![6, 5], black_pawn.clone(), HashMap::new()), (vec![6, 6], black_pawn.clone(), HashMap::new()), (vec![6, 7], black_pawn, HashMap::new()),
+                (vec![7, 0], black_rook.clone(), HashMap::new()),
+
 
                 (vec![0, 0], (Piece::new("black".to_string(), "rook".to_string(), attributes.clone()), HashMap::new())),
                 (vec![0, 1], (Piece::new("black".to_string(), "knight".to_string(), attributes.clone()), HashMap::new())),
