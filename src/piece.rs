@@ -113,8 +113,7 @@ impl Default for Board2D {
 /// // (0, 0)에서 출발하며, (1, 1)로 이동이 가능하며, 이동하는 속성을 가진다. 기물의 색상과 종류는 백색 비숍이다. 이동과 잡기가 가능하다.
 /// ```
 ///
-#[derive(Clone, Eq, PartialEq, Debug, Default, Dimension)]
-#[derive(Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Default, Dimension)]
 pub struct MoveType<const D: usize> {
     c_positions: Option<Vec<usize>>,
     positions: Option<Vec<usize>>,
@@ -621,7 +620,6 @@ pub fn check_move_2d(moves: Vec<&MoveType2D>, player_input: String) -> Option<Ve
         for move_type in moves {
             let name_correct = Some(name.clone()) == move_type.clone().piece.map(|move_type| move_type.piece_type);
             let (c_positions, positions) = (&move_type.c_positions, &move_type.positions);
-            let (start_col, start_row, end_col, end_row): (Option<usize>, Option<usize>, Option<usize>, Option<usize>);
             parsing_positions!(c_positions, start_col, start_row);
             parsing_positions!(positions, end_col, end_row);
 
