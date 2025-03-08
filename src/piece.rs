@@ -8,7 +8,6 @@ use std::{
     sync::Arc,
     any::Any,
 };
-use std::arch::x86_64::_mm_castpd_ps;
 use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use regex::Regex;
 use lazy_static::lazy_static;
@@ -272,7 +271,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
         // std::thread::spawn => into_par_iter()
         // for, if => filter_map()
         // extend() => flatten()
-        let mut output: Vec<_> = self.piece_direction.clone().into_par_iter().filter_map(|walk_type| {
+        self.piece_direction.clone().into_par_iter().filter_map(|walk_type| {
             let (piece, _other) = &walk_type;
             let (walk_type_color, walk_type_piece_type) = (&piece.color, &piece.piece_type);
             if board_color == walk_type_color && board_piece_type == walk_type_piece_type {
@@ -280,19 +279,14 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
             } else {
                 None
             }
-        }).flatten().collect();
-        output
-    }
-
-    fn board_piece_search(self: Arc<Self>) -> Vec<MoveType<D>> {
-        (&self.board).pieces.keys().flat_map(|x| {
-            let self_clone = Arc::clone(&self);
-            self_clone.piece(x.clone())
-        }).collect()
+        }).flatten().collect()
     }
 
     fn search_piece(self: Arc<Self>, deep: usize) -> CanMove<D> {
-        let piece_search = self.clone().board_piece_search();
+        let piece_search: Vec<_> = (&self.board).pieces.keys().flat_map(|x| {
+            let self_clone = Arc::clone(&self);
+            self_clone.piece(x.clone())
+        }).collect();
         let mut output = HashMap::new();
         if deep > 0 {
             let buffer: Vec<_> = piece_search.into_par_iter().map(|moving| {
