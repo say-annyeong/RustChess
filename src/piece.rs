@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
     any::Any,
 };
+use std::fmt::write;
 use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use regex::Regex;
 use lazy_static::lazy_static;
@@ -31,27 +32,23 @@ trait Dimension<const D: usize> {
     fn dimensions() -> usize;
 }
 
-trait CheckMove<const D: usize> {
-    fn check_move(moves: Vec<&MoveType<D>>, player_input: String) -> Option<Vec<MoveType<D>>>;
-}
-
 /// 칸의 기물 정보를 위한 구조체.
 #[derive(Clone, Debug, Default, Hash, Eq, PartialEq)]
 pub struct Piece {
     color: String,
-    piece_type: String,
+    name: String,
     other: BTreeMap<String, Vec<String>>
 }
 
 impl Piece {
     fn new(color: String, piece_type: String, other: BTreeMap<String, Vec<String>>) -> Self {
-        Self { color, piece_type, other }
+        Self { color, name: piece_type, other }
     }
 }
 
 impl Display for Piece {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut short_names = self.other.get("short_name").cloned().unwrap_or_else(|| vec![self.piece_type.clone()]);
+        let mut short_names = self.other.get("short_name").cloned().unwrap_or_else(|| vec![self.name.clone()]);
         let mut short_color_names = self.other.get("short_color_name").cloned().unwrap_or_else(|| vec![self.color.clone()]);
         if short_names.len() > 1 {
             short_names.sort();
@@ -59,8 +56,8 @@ impl Display for Piece {
         if short_color_names.len() > 1 {
             short_color_names.sort();
         }
-        let short_name = &short_names[0];
-        let short_color_name = &short_color_names[0];
+        let short_name = short_names.last().unwrap();
+        let short_color_name = short_color_names.last().unwrap();
         write!(f, "{}{}", short_color_name, short_name)
     }
 }
@@ -86,6 +83,22 @@ impl<const D: usize> BoardXD<D> {
 impl Default for Board2D {
     fn default() -> Self {
         default_board()
+    }
+}
+
+impl Display for Board2D {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for y in 0..self.board_size[0] {
+            for x in 0..self.board_size[1] {
+                let Some((piece, _other)) = self.pieces.get(&vec![y, x]) else {
+                    write!(f, " -").unwrap();
+                    continue
+                };
+                write!(f, "{}", piece).unwrap();
+            }
+            writeln!(f).unwrap();
+        }
+        write!(f, "")
     }
 }
 
@@ -267,13 +280,13 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
         let Some((piece, _)) = &self.board.pieces.get(&positions) else {
             return Vec::new()
         };
-        let (board_color, board_piece_type) = (&piece.color, &piece.piece_type);
+        let (board_color, board_piece_type) = (&piece.color, &piece.name);
         // std::thread::spawn => into_par_iter()
         // for, if => filter_map()
         // extend() => flatten()
         self.piece_direction.clone().into_par_iter().filter_map(|walk_type| {
             let (piece, _other) = &walk_type;
-            let (walk_type_color, walk_type_piece_type) = (&piece.color, &piece.piece_type);
+            let (walk_type_color, walk_type_piece_type) = (&piece.color, &piece.name);
             if board_color == walk_type_color && board_piece_type == walk_type_piece_type {
                 Some(self.walk(positions.clone(), walk_type))
             } else {
@@ -403,6 +416,77 @@ impl Default for MainCalculate<2> {
     }
 }
 
+#[derive(Dimension)]
+struct ParsePlayerInput<const D: usize> {
+    moves: Vec<MoveType<D>>
+}
+
+impl ParsePlayerInput<2> {
+    fn player_input_parse(&self, player_input: String) -> Option<Vec<MoveType2D>> {
+        if let Some(input) = PLAYER_INPUT_RE.captures(player_input.as_str()) {
+            let (mut name, start_col, start_row, _takes, end_col, end_row, _other) = (input["name"].to_lowercase(), input["start_col"].to_lowercase(), input["start_row"].to_string(), !input["takes"].is_empty(), input["end_col"].to_lowercase(), input["end_row"].to_string(), input["other"].to_lowercase());
+            let cx = if start_col.is_empty() { None } else { Some(chess_y_convent(start_col)) };
+            let cy = if start_row.is_empty() { None } else { Some(chess_x_convent(start_row)) };
+            let x = chess_x_convent(end_row);
+            let y = chess_y_convent(end_col);
+
+            let (player_c_positions, player_positions) = (vec![cy, cx], vec![y, x]);
+
+            if name.is_empty() {
+                name = "pawn".to_string();
+            }
+
+            let mut can_moves = Vec::new();
+            macro_rules! parsing_positions {
+                ($input:expr, $output:ident) => {
+                    let $output: Vec<_> = $input.as_ref().map(|v| v.iter().map(Some).collect()).unwrap_or_default();
+                };
+            }
+
+            macro_rules! correct_check {
+                ($input1:expr, $input2:expr, $output:ident) => {
+                    let $output = $input1.iter().zip($input2).all(|(player_position, position| {
+                        match position {
+                            Some(pos) => player_position == pos,
+                            None => true
+                        }
+                    });
+                };
+            }
+
+            for move_type in &self.moves {
+                let name_correct = move_type.piece.iter().cloned().any(|move_type| move_type.name == name);
+                let (c_positions, positions) = (&move_type.c_positions, &move_type.positions);
+                parsing_positions!(c_positions, parsing_c_positions);
+                parsing_positions!(positions, parsing_positions);
+
+                correct_check!(player_c_positions, parsing_c_positions, c_positions_correct);
+                //correct_check!(player_positions, parsing_positions, positions_correct);
+
+                let positions_correct = player_positions.iter().zip(parsing_positions).all(|(player_position, position)| {
+                    match position {
+                        Some(pos) => player_position == pos,
+                        None => true
+                    }
+                });
+
+                let c_positions_correct = false;
+                let positions_correct = false;
+
+                //let takes_correct = if takes { Some("x".to_string()) } else { None } == move_type.move_type;
+
+                if name_correct && c_positions_correct && positions_correct {
+                    can_moves.push(move_type);
+                }
+            }
+
+            Some(can_moves.into_iter().map(|move_type| move_type.clone()).collect())
+        } else {
+            Some(vec![MoveType::other(Some(BTreeMap::from([("player_input".to_string(), vec![player_input])])))])
+        }
+    }
+}
+
 /// 수 추적 및 통신을 위한 열거형
 ///
 /// 이 열거형은 게임 상태를 추적하고, 수의 연쇄적 진행을 관리하는 데 사용됩니다.
@@ -488,9 +572,9 @@ pub fn default_board() -> Board2D {
                 (vec![7, 2], (black_bishop.clone(), HashMap::new())),
                 (vec![7, 3], (black_queen, HashMap::new())),
                 (vec![7, 4], (black_king, HashMap::new())),
-                (vec![7, 4], (black_bishop, HashMap::new())),
-                (vec![7, 4], (black_knight, HashMap::new())),
-                (vec![7, 4], (black_rook, HashMap::new())),
+                (vec![7, 5], (black_bishop, HashMap::new())),
+                (vec![7, 6], (black_knight, HashMap::new())),
+                (vec![7, 7], (black_rook, HashMap::new())),
             ]
         )
     )
@@ -584,9 +668,7 @@ fn custom_calculate_moved<const D: usize>(board: BoardXD<D>, piece_type: Vec<Str
 }
 
 fn chess_x_convent(input: String) -> usize {
-    let input_parse = input.trim().parse::<usize>().unwrap();
-    let index: Vec<usize> = unsafe { (0..BOARD_X_SIZE).rev().collect() };
-    index[input_parse - 1]
+    input.parse().unwrap()
 }
 
 fn chess_y_convent(input: String) -> usize {
@@ -594,43 +676,7 @@ fn chess_y_convent(input: String) -> usize {
 }
 
 pub fn check_move_2d(moves: Vec<&MoveType2D>, player_input: String) -> Option<Vec<MoveType2D>> {
-    if let Some(input) = PLAYER_INPUT_RE.captures(player_input.as_str()) {
-        let (mut name, start_col, start_row, _takes, end_col, end_row, _other) = (input["name"].to_lowercase(), input["start_col"].to_lowercase(), input["start_row"].to_string(), !input["takes"].is_empty(), input["end_col"].to_lowercase(), input["end_row"].to_string(), input["other"].to_lowercase());
-        let cx = if start_col.is_empty() { None } else { Some(chess_y_convent(start_col)) };
-        let cy = if start_row.is_empty() { None } else { Some(chess_x_convent(start_row)) };
-        let x = chess_x_convent(end_row);
-        let y = chess_y_convent(end_col);
-
-        if name.is_empty() {
-            name = "pawn".to_string();
-        }
-
-        let mut can_moves = Vec::new();
-        macro_rules! parsing_positions {
-            ($input:expr, $output1:ident, $output2:ident) => {
-                let ($output1, $output2) = $input.as_ref().map(|pos| (pos.get(0).copied(), pos.get(1).copied())).unwrap_or((None, None));
-            };
-        }
-        for move_type in moves {
-            let name_correct = Some(name.clone()) == move_type.clone().piece.map(|move_type| move_type.piece_type);
-            let (c_positions, positions) = (&move_type.c_positions, &move_type.positions);
-            parsing_positions!(c_positions, start_col, start_row);
-            parsing_positions!(positions, end_col, end_row);
-
-            let start_col_correct = cx == start_col || cx.is_none();
-            let start_row_correct = cy == start_row || cy.is_none();
-            //let takes_correct = if takes { Some("x".to_string()) } else { None } == move_type.move_type;
-            let end_col_correct = Some(x) == end_col;
-            let end_row_correct = Some(y) == end_row;
-            if name_correct && start_col_correct && start_row_correct && end_col_correct && end_row_correct {
-                can_moves.push(move_type);
-            }
-        }
-
-        Some(can_moves.into_iter().map(|move_type| move_type.clone()).collect())
-    } else {
-        Some(vec![MoveType::other(Some(BTreeMap::from([("player_input".to_string(), vec![player_input])])))])
-    }
+    todo!()
 }
 
 pub fn check_move<const D: usize>(moves: Vec<&MoveType<D>>, player_input: String) -> Option<Vec<MoveType<D>>> {
