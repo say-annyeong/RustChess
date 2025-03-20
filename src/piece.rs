@@ -8,12 +8,10 @@ use std::{
     sync::Arc,
     any::Any,
 };
-use std::fmt::write;
 use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use regex::Regex;
 use lazy_static::lazy_static;
 use lib::Dimension;
-use crate::BOARD_X_SIZE;
 
 pub type Board2D = BoardXD<2>;
 pub type MoveType2D = MoveType<2>;
@@ -21,6 +19,7 @@ pub type WalkType2D = WalkType<2>;
 pub type CalculateMoves2D<'a> = CalculateMoves<'a, 2>;
 pub type MainCalculate2D = MainCalculate<2>;
 pub type CanMove2D = CanMove<2>;
+pub type ParsePlayerInput2D = ParsePlayerInput<2>;
 
 lazy_static! {
     static ref PLAYER_INPUT_RE: Regex = Regex::new(
@@ -380,7 +379,7 @@ impl<const D: usize> MainCalculate<D> {
 
     pub fn piece_move(&mut self, move_type: MoveType<D>) {
         if let (Some(c_positions), Some(positions)) = (move_type.c_positions, move_type.positions) {
-            let mut buffer = &mut self.board.pieces;
+            let buffer = &mut self.board.pieces;
             if buffer.contains_key(&c_positions) {
                 let Some(v_buffer) = buffer.get(&c_positions).cloned() else {
                     return
@@ -421,14 +420,14 @@ struct ParsePlayerInput<const D: usize> {
     moves: Vec<MoveType<D>>
 }
 
-impl ParsePlayerInput<2> {
+impl ParsePlayerInput2D {
     fn player_input_parse(&self, player_input: String) -> Option<Vec<MoveType2D>> {
         if let Some(input) = PLAYER_INPUT_RE.captures(player_input.as_str()) {
             let (mut name, start_col, start_row, _takes, end_col, end_row, _other) = (input["name"].to_lowercase(), input["start_col"].to_lowercase(), input["start_row"].to_string(), !input["takes"].is_empty(), input["end_col"].to_lowercase(), input["end_row"].to_string(), input["other"].to_lowercase());
             let cx = if start_col.is_empty() { None } else { Some(chess_y_convent(start_col)) };
             let cy = if start_row.is_empty() { None } else { Some(chess_x_convent(start_row)) };
-            let x = chess_x_convent(end_row);
-            let y = chess_y_convent(end_col);
+            let x = Some(chess_x_convent(end_row));
+            let y = Some(chess_y_convent(end_col));
 
             let (player_c_positions, player_positions) = (vec![cy, cx], vec![y, x]);
 
@@ -437,41 +436,28 @@ impl ParsePlayerInput<2> {
             }
 
             let mut can_moves = Vec::new();
-            macro_rules! parsing_positions {
-                ($input:expr, $output:ident) => {
-                    let $output: Vec<_> = $input.as_ref().map(|v| v.iter().map(Some).collect()).unwrap_or_default();
-                };
-            }
 
             macro_rules! correct_check {
                 ($input1:expr, $input2:expr, $output:ident) => {
-                    let $output = $input1.iter().zip($input2).all(|(player_position, position| {
-                        match position {
-                            Some(pos) => player_position == pos,
-                            None => true
-                        }
-                    });
+                    let $output = match $input2 {
+                        Some(contains) => $input1.iter().zip(contains).all(|(p_pos, pos)|{
+                            match p_pos {
+                                Some(p) => p == pos,
+                                None => true
+                            }
+                        }),
+                        None => false
+                    };
                 };
             }
 
             for move_type in &self.moves {
                 let name_correct = move_type.piece.iter().cloned().any(|move_type| move_type.name == name);
                 let (c_positions, positions) = (&move_type.c_positions, &move_type.positions);
-                parsing_positions!(c_positions, parsing_c_positions);
-                parsing_positions!(positions, parsing_positions);
 
-                correct_check!(player_c_positions, parsing_c_positions, c_positions_correct);
-                //correct_check!(player_positions, parsing_positions, positions_correct);
+                correct_check!(player_c_positions, c_positions.as_ref(), c_positions_correct);
+                correct_check!(player_positions, positions.as_ref(), positions_correct);
 
-                let positions_correct = player_positions.iter().zip(parsing_positions).all(|(player_position, position)| {
-                    match position {
-                        Some(pos) => player_position == pos,
-                        None => true
-                    }
-                });
-
-                let c_positions_correct = false;
-                let positions_correct = false;
 
                 //let takes_correct = if takes { Some("x".to_string()) } else { None } == move_type.move_type;
 
@@ -672,7 +658,7 @@ fn chess_x_convent(input: String) -> usize {
 }
 
 fn chess_y_convent(input: String) -> usize {
-    input.chars().enumerate().map(|(radix, num)| (num.to_digit(36).unwrap() - 9) as usize * 26_usize.pow(radix as u32)).sum::<usize>() - 1
+    (input.chars().enumerate().map(|(radix, c)| (c as u8 - 'a' as u8 + 1) * 26u8.pow(radix as u32)).sum::<u8>() - 1) as usize
 }
 
 pub fn check_move_2d(moves: Vec<&MoveType2D>, player_input: String) -> Option<Vec<MoveType2D>> {
