@@ -18,8 +18,8 @@ pub type MoveType2D = MoveType<2>;
 pub type WalkType2D = WalkType<2>;
 pub type CalculateMoves2D<'a> = CalculateMoves<'a, 2>;
 pub type MainCalculate2D = MainCalculate<2>;
-pub type CanMove2D = CanMove<2>;
 pub type ParsePlayerInput2D = ParsePlayerInput<2>;
+pub type CanMove2D = CanMove<2>;
 
 lazy_static! {
     static ref PLAYER_INPUT_RE: Regex = Regex::new(
@@ -37,24 +37,28 @@ lazy_static!{
 
 macro_rules! default_pieces {
     ($white_pawn:ident, $white_knight:ident, $white_bishop:ident, $white_rook:ident, $white_queen:ident, $white_king:ident, $black_pawn:ident, $black_knight:ident, $black_bishop:ident, $black_rook:ident, $black_queen:ident, $black_king:ident) => {
-        let $white_pawn = Piece::pawn("white".to_string());
-        let $white_knight = Piece::knight("white".to_string());
-        let $white_bishop = Piece::bishop("white".to_string());
-        let $white_rook = Piece::rook("white".to_string());
-        let $white_queen = Piece::queen("white".to_string());
-        let $white_king = Piece::king("white".to_string());
+        let $white_pawn = Piece::pawn("white".to_string(), vec!["W".to_string()]);
+        let $white_knight = Piece::knight("white".to_string(), vec!["W".to_string()]);
+        let $white_bishop = Piece::bishop("white".to_string(), vec!["W".to_string()]);
+        let $white_rook = Piece::rook("white".to_string(), vec!["W".to_string()]);
+        let $white_queen = Piece::queen("white".to_string(), vec!["W".to_string()]);
+        let $white_king = Piece::king("white".to_string(), vec!["W".to_string()]);
 
-        let $black_pawn = Piece::pawn("black".to_string());
-        let $black_knight = Piece::knight("black".to_string());
-        let $black_bishop = Piece::bishop("black".to_string());
-        let $black_rook = Piece::rook("black".to_string());
-        let $black_queen = Piece::queen("black".to_string());
-        let $black_king = Piece::king("black".to_string());
+        let $black_pawn = Piece::pawn("black".to_string(), vec!["B".to_string()]);
+        let $black_knight = Piece::knight("black".to_string(), vec!["B".to_string()]);
+        let $black_bishop = Piece::bishop("black".to_string(), vec!["B".to_string()]);
+        let $black_rook = Piece::rook("black".to_string(), vec!["B".to_string()]);
+        let $black_queen = Piece::queen("black".to_string(), vec!["B".to_string()]);
+        let $black_king = Piece::king("black".to_string(), vec!["B".to_string()]);
     };
 }
 
 trait Dimension<const D: usize> {
     fn dimensions() -> usize;
+}
+
+trait ParseInput<const D: usize> {
+    fn parse_player_input(&self, player_input: String) -> Vec<MoveType<D>>;
 }
 
 /// 칸의 기물 정보를 위한 구조체.
@@ -70,24 +74,24 @@ impl Piece {
         Self { color, name: piece_type, other }
     }
 
-    fn pawn(color: String) -> Self {
-        Self::new(color, "pawn".to_string(), BTreeMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("short_name".to_string(), vec!["P".to_string()]), ("short_color_name".to_string(), vec!["W".to_string()])]))
+    fn pawn(color: String, short_color: Vec<String>) -> Self {
+        Self::new(color, "pawn".to_string(), BTreeMap::from([("attributes".to_string(), vec!["promotion".to_string()]), ("short_name".to_string(), vec!["P".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
 
-    fn knight(color: String) -> Self {
-        Self::new(color, "knight".to_string(), BTreeMap::from([("short_name".to_string(), vec!["N".to_string()]), ("short_color_name".to_string(), vec!["W".to_string()])]))
+    fn knight(color: String, short_color: Vec<String>) -> Self {
+        Self::new(color, "knight".to_string(), BTreeMap::from([("short_name".to_string(), vec!["N".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
-    fn bishop(color: String) -> Self {
-        Self::new(color, "bishop".to_string(), BTreeMap::from([("short_name".to_string(), vec!["B".to_string()]), ("short_color_name".to_string(), vec!["W".to_string()])]))
+    fn bishop(color: String, short_color: Vec<String>) -> Self {
+        Self::new(color, "bishop".to_string(), BTreeMap::from([("short_name".to_string(), vec!["B".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
-    fn rook(color: String) -> Self {
-        Self::new(color, "rook".to_string(), BTreeMap::from([("short_name".to_string(), vec!["R".to_string()]), ("short_color_name".to_string(), vec!["W".to_string()])]))
+    fn rook(color: String, short_color: Vec<String>) -> Self {
+        Self::new(color, "rook".to_string(), BTreeMap::from([("short_name".to_string(), vec!["R".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
-    fn queen(color: String) -> Self {
-        Self::new(color, "queen".to_string(), BTreeMap::from([("short_name".to_string(), vec!["Q".to_string()]), ("short_color_name".to_string(), vec!["W".to_string()])]))
+    fn queen(color: String, short_color: Vec<String>) -> Self {
+        Self::new(color, "queen".to_string(), BTreeMap::from([("short_name".to_string(), vec!["Q".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
-    fn king(color: String) -> Self {
-        Self::new(color, "king".to_string(), BTreeMap::from([("attributes".to_string(), vec!["check".to_string(), "threatened".to_string(), "checkmate".to_string()]), ("short_name".to_string(), vec!["K".to_string()]), ("short_color_name".to_string(), vec!["W".to_string()])]))
+    fn king(color: String, short_color: Vec<String>) -> Self {
+        Self::new(color, "king".to_string(), BTreeMap::from([("attributes".to_string(), vec!["check".to_string(), "threatened".to_string(), "checkmate".to_string()]), ("short_name".to_string(), vec!["K".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
 }
 
@@ -246,58 +250,58 @@ impl<const D: usize> WalkType<D> {
 impl WalkType2D {
     fn knight() -> Vec<Self> {
         vec![
-            WalkType::new(vec![2, 1], 1, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![2, -1], 1, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![1, -2], 1, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, -2], 1, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-2, -1], 1, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-2, 1], 1, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, 2], 1, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![1, 2], 1, OTHER_MOVE_CAPTURE.clone())
+            Self::new(vec![2, 1], 1, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![2, -1], 1, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![1, -2], 1, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, -2], 1, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-2, -1], 1, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-2, 1], 1, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, 2], 1, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![1, 2], 1, OTHER_MOVE_CAPTURE.clone())
         ]
     }
 
     fn bishop() -> Vec<Self> {
         vec![
-            WalkType::new(vec![1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone())
+            Self::new(vec![1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone())
         ]
     }
 
     fn rook() -> Vec<Self> {
         vec![
-            WalkType::new(vec![1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![0, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![0, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone())
+            Self::new(vec![1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![0, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![0, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone())
         ]
     }
 
     fn queen() -> Vec<Self> {
         vec![
-            WalkType::new(vec![1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![0, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![-1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
-            WalkType::new(vec![0, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone())
+            Self::new(vec![1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![0, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, -1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, 0], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![-1, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone()),
+            Self::new(vec![0, 1], usize::MAX, OTHER_MOVE_CAPTURE.clone())
         ]
     }
 
     fn king() -> Vec<Self> {
         vec![
-            WalkType::new(vec![1, 1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
-            WalkType::new(vec![1, 0], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
-            WalkType::new(vec![1, -1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
-            WalkType::new(vec![0, -1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
-            WalkType::new(vec![-1, -1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
-            WalkType::new(vec![-1, 0], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
-            WalkType::new(vec![-1, 1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
-            WalkType::new(vec![0, 1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone())
+            Self::new(vec![1, 1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
+            Self::new(vec![1, 0], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
+            Self::new(vec![1, -1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
+            Self::new(vec![0, -1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
+            Self::new(vec![-1, -1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
+            Self::new(vec![-1, 0], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
+            Self::new(vec![-1, 1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone()),
+            Self::new(vec![0, 1], 1, OTHER_MOVE_CAPTURE_THREATENED.clone())
         ]
     }
 
@@ -471,7 +475,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
 
 #[derive(Dimension)]
 pub struct MainCalculate<const D: usize> {
-    board: BoardXD<D>,
+    pub(crate) board: BoardXD<D>,
     piece_type: Vec<String>,
     piece_direction: HashMap<Piece, Vec<WalkType<D>>>,
     pub save_moves: CanMove<D>
@@ -522,12 +526,18 @@ impl Default for MainCalculate<2> {
 }
 
 #[derive(Dimension)]
-struct ParsePlayerInput<const D: usize> {
+pub struct ParsePlayerInput<const D: usize> {
     moves: Vec<MoveType<D>>
 }
 
+impl<const D: usize> ParsePlayerInput<D> {
+    pub fn new(moves: Vec<MoveType<D>>) -> Self {
+        Self { moves }
+    }
+}
+
 impl ParsePlayerInput2D {
-    fn player_input_parse(&self, player_input: String) -> Vec<MoveType2D> {
+    pub fn parse_player_input(&self, player_input: String) -> Vec<MoveType2D> {
         if let Some(input) = PLAYER_INPUT_RE.captures(player_input.as_str()) {
             let (mut name, start_col, start_row, _takes, end_col, end_row, _other) = (input["name"].to_lowercase(), input["start_col"].to_lowercase(), input["start_row"].to_string(), !input["takes"].is_empty(), input["end_col"].to_lowercase(), input["end_row"].to_string(), input["other"].to_lowercase());
             let cx = if start_col.is_empty() { None } else { Some(chess_y_convent(start_col)) };
@@ -563,7 +573,6 @@ impl ParsePlayerInput2D {
 
                 correct_check!(player_c_positions, c_positions.as_ref(), c_positions_correct);
                 correct_check!(player_positions, positions.as_ref(), positions_correct);
-
 
                 //let takes_correct = if takes { Some("x".to_string()) } else { None } == move_type.move_type;
 
@@ -708,17 +717,12 @@ pub fn check_move_2d(moves: Vec<&MoveType2D>, player_input: String) -> Option<Ve
     todo!()
 }
 
-pub fn check_move<const D: usize>(moves: Vec<&MoveType<D>>, player_input: String) -> Option<Vec<MoveType<D>>> {
-    /*
-    if D == 2 {
-        check_move_2d(moves, player_input)
-    } else {
-        None
-    }
-    */
+pub fn check_move<const D: usize>(moves: Vec<&MoveType<D>>, player_input: String) -> Vec<MoveType<D>> {
+    let parse_move = ParsePlayerInput::new(moves.into_iter().cloned().collect());
+    //parse_move.parse_player_input(player_input)
     todo!()
 }
 
-fn custom_check_move<const D: usize>(board: BoardXD<D>, piece_type: Vec<String>, piece_move: HashMap<Piece, Vec<WalkType<D>>>, player_input: String) -> Option<Vec<MoveType<D>>> {
+fn custom_check_move<const D: usize>(board: BoardXD<D>, piece_type: Vec<String>, piece_move: HashMap<Piece, Vec<WalkType<D>>>, player_input: String) -> Vec<MoveType<D>> {
     check_move(custom_calculate_moved(board, piece_type, piece_move, 1).as_can_moves().unwrap().1.keys().collect(), player_input)
 }
