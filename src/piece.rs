@@ -81,15 +81,19 @@ impl Piece {
     fn knight(color: String, short_color: Vec<String>) -> Self {
         Self::new(color, "knight".to_string(), BTreeMap::from([("short_name".to_string(), vec!["N".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
+
     fn bishop(color: String, short_color: Vec<String>) -> Self {
         Self::new(color, "bishop".to_string(), BTreeMap::from([("short_name".to_string(), vec!["B".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
+
     fn rook(color: String, short_color: Vec<String>) -> Self {
         Self::new(color, "rook".to_string(), BTreeMap::from([("short_name".to_string(), vec!["R".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
+
     fn queen(color: String, short_color: Vec<String>) -> Self {
         Self::new(color, "queen".to_string(), BTreeMap::from([("short_name".to_string(), vec!["Q".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
+
     fn king(color: String, short_color: Vec<String>) -> Self {
         Self::new(color, "king".to_string(), BTreeMap::from([("attributes".to_string(), vec!["check".to_string(), "threatened".to_string(), "checkmate".to_string()]), ("short_name".to_string(), vec!["K".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
@@ -330,10 +334,10 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
             if walk_type.other.contains_key("capture".into()) {
                 return MoveType::new(None, Some(positions), Some("x".into()), None, Some(piece.clone()), Some(walk_type.other.into_iter().collect()))
             }
-        }
-
-        if walk_type.other.contains_key("move".into()) {
-            return MoveType::new(None, Some(positions), Some("m".into()), None, None, Some(walk_type.other.into_iter().collect()))
+        } else {
+            if walk_type.other.contains_key("move".into()) {
+                return MoveType::new(None, Some(positions), Some("m".into()), None, None, Some(walk_type.other.into_iter().collect()))
+            }
         }
 
         MoveType::default()
@@ -405,26 +409,45 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
     }
 
     fn search_piece(self: Arc<Self>, deep: usize) -> CanMove<D> {
+        // 현재 보드에 있는 말들(키 값들)을 순회하며, 각 말에 대해 이동 가능한 결과를 생성합니다.
+        // 각 말에 대해 piece 메서드를 호출하여 가능한 이동을 반환하고, 이를 piece_search 벡터에 모읍니다.
+        // Arc<Self>를 복제하여 멀티스레드 환경에서 안전하게 사용합니다.
         let piece_search: Vec<_> = (&self.board).pieces.keys().flat_map(|x| {
             let self_clone = Arc::clone(&self);
             self_clone.piece(x.clone())
         }).collect();
+
+        // 각 이동에 대한 결과를 저장할 해시맵(output)을 생성합니다.
         let mut output = HashMap::new();
+
+        // 재귀 깊이(deep)에 따라 처리 방식을 달리합니다.
         if deep > 0 {
+            // 깊이가 0보다 클 경우, 각 이동에 대해 재귀적으로 탐색합니다.
+            // piece_search의 각 요소에 대해 병렬 반복자(into_par_iter)를 사용하여,
+            // 각 이동에 따른 새로운 보드 상태와 재귀 호출 결과를 생성합니다.
             let buffer: Vec<_> = piece_search.into_par_iter().map(|moving| {
+                // 현재 이동을 적용하여 새 보드 상태를 생성합니다.
                 let board = self.piece_moved(moving.clone());
+                // 새 보드 상태와 기존의 piece_type, piece_direction 정보를 사용해 새 인스턴스를 만듭니다.
                 let cache = Arc::new(Self::new(board, self.piece_type, self.piece_direction));
+                // 재귀 호출을 통해 다음 깊이의 탐색 결과와 현재 이동을 튜플로 반환합니다.
                 (cache.search_piece(deep - 1), moving)
             }).collect();
+
+            // 버퍼에 저장된 결과를 순차적으로 순회하며, 각 이동과 그에 따른 탐색 결과를 output에 삽입합니다.
+            // 이 부분은 싱글 스레드에서 실행되므로 동시성 문제가 없습니다.
             for (can_move, moving) in buffer {
                 output.insert(moving, Box::new(can_move));
             }
         } else {
+            // 재귀 깊이가 0인 경우, 더 이상 재귀 호출 없이 각 이동에 대해 현재 보드 상태를 기반으로 결과를 계산합니다.
             for moving in piece_search {
                 let moved_board = self.piece_moved(moving.clone());
+                // 빈 이동 목록과 함께 현재 이동의 결과를 output에 저장합니다.
                 output.insert(moving, Box::new(CanMove::CanMoves((moved_board, HashMap::new()))));
             }
         }
+        // 최종적으로, 현재 보드 상태와 각 이동에 대한 탐색 결과가 포함된 CanMove::CanMoves를 반환합니다.
         CanMove::CanMoves((self.board.clone(), output))
     }
 
@@ -519,7 +542,7 @@ impl<const D: usize> MainCalculate<D> {
     }
 }
 
-impl Default for MainCalculate<2> {
+impl Default for MainCalculate2D {
     fn default() -> Self {
         Self::new(default_board(), default_piece_type(), default_piece_move())
     }
@@ -581,7 +604,7 @@ impl ParsePlayerInput2D {
                 }
             }
 
-            can_moves.into_iter().map(|move_type| move_type.clone()).collect()
+            can_moves.into_iter().cloned().collect()
         } else {
             vec![MoveType::other(Some(BTreeMap::from([("player_input".to_string(), vec![player_input])])))]
         }

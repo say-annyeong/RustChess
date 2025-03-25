@@ -8,10 +8,15 @@ fn main() {
     println!("{}", play_board.board);
     let read = stdin().lock().lines();
     let mut reader = read.map(|line| line.unwrap());
-    let input = reader.next().unwrap();
-    let possible_move = play_board.calculate_moved(2);
-    let moves: Vec<_> = possible_move.as_can_moves().unwrap().1.keys().cloned().collect();
+    play_board.calculate_move(2);
+    println!("possible move: {:?}", play_board.save_moves);
+    let (_, buffer) = play_board.save_moves.as_can_moves().unwrap().clone();
+    let moves: Vec<_> = buffer.keys().cloned().collect();
+    println!("moves: {:?}", moves);
+    /*
     let parse_player_input = ParsePlayerInput2D::new(moves);
+    let input = reader.next().unwrap();
     let parse_input = parse_player_input.parse_player_input(input);
     println!("parse input: {:?}", parse_input)
+     */
 }
