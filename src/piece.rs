@@ -144,14 +144,14 @@ impl Display for Board2D {
         for y in 0..self.board_size[0] {
             for x in 0..self.board_size[1] {
                 let Some((piece, _other)) = self.pieces.get(&vec![y, x]) else {
-                    write!(f, " -").unwrap();
+                    write!(f, " -")?;
                     continue
                 };
-                write!(f, "{}", piece).unwrap();
+                write!(f, "{}", piece)?;
             }
-            writeln!(f).unwrap();
+            writeln!(f)?;
         }
-        write!(f, "")
+        Ok(())
     }
 }
 
@@ -330,46 +330,92 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
     }
 
     fn step(&self, positions: Vec<usize>, walk_type: WalkType<D>) -> MoveType<D> {
-        if let Some((piece, _other)) = self.board.pieces.get(&positions) {
-            if walk_type.other.contains_key("capture".into()) {
-                return MoveType::new(None, Some(positions), Some("x".into()), None, Some(piece.clone()), Some(walk_type.other.into_iter().collect()))
+        // `walk_type`의 `other` 맵에서 "move_type" 키에 해당하는 값을 가져옴
+        match walk_type.other.get(&"move_type".to_string()) {
+            Some(move_type) => {
+                // 현재 `positions` 위치에 조각(piece)이 존재하는지 확인
+                if let Some((piece, _other)) = self.board.pieces.get(&positions) {
+                    // "move_type"에 "capture"가 포함된 경우, 상대 기물을 잡는 이동을 생성
+                    if move_type.contains(&"capture".to_string()) {
+                        return MoveType::new(
+                            None,                          // 이동 전 위치 없음
+                            Some(positions),               // 이동 후 위치
+                            Some("x".into()),              // 캡처(move type: "x")
+                            None,                          // 추가 정보 없음
+                            Some(piece.clone()),           // 잡히는 기물
+                            Some(walk_type.other.into_iter().collect()) // 추가 속성
+                        )
+                    }
+                } else {
+                    // 해당 위치에 기물이 없을 경우 "move" 이동을 확인
+                    if move_type.contains(&"move".to_string()) {
+                        return MoveType::new(
+                            None,                          // 이동 전 위치 없음
+                            Some(positions),               // 이동 후 위치
+                            Some("m".into()),              // 일반 이동(move type: "m")
+                            None,                          // 추가 정보 없음
+                            None,                          // 잡히는 기물 없음
+                            Some(walk_type.other.into_iter().collect()) // 추가 속성
+                        )
+                    }
+                }
             }
-        } else {
-            if walk_type.other.contains_key("move".into()) {
-                return MoveType::new(None, Some(positions), Some("m".into()), None, None, Some(walk_type.other.into_iter().collect()))
-            }
+            None => () // "move_type"이 없을 경우 아무 작업도 수행하지 않음
         }
 
+        // 기본값 반환 (이동이 불가능한 경우)
         MoveType::default()
     }
 
-    fn walk(&self, c_positions: Vec<usize>, piece_walk_types: (Piece, Vec<WalkType<{ D }>>)) -> Vec<MoveType<D>> {
+
+    fn walk(&self, c_positions: Vec<usize>, piece_walk_types: (Piece, Vec<WalkType<D>>)) -> Vec<MoveType<D>> {
+        // 인자로 받은 piece와 해당하는 walk_type들을 분리
         let (piece, walk_types) = piece_walk_types;
+
+        // walk_types에 대해 병렬(iter)로 순회하며 가능한 모든 이동을 계산
         walk_types.into_par_iter().flat_map(|walk_type| {
             let mut moves = Vec::new();
+            // 초기 위치 벡터를 복사하여 사용
             let mut positions = c_positions.clone();
+            // 점프 횟수를 추적하는 변수 (처음 점프는 허용)
             let mut jump = 0;
+
+            // walk_type에서 지정한 횟수만큼 반복 이동을 시도
             for _ in 0..walk_type.times {
-                let next_position: Option<Vec<_>> = positions.iter().zip(walk_type.d_positions.iter()).map(|(x, dx)| *x as isize + dx).map(|x| if x < 0 { None } else { Some(x as usize) }).collect();
+                // 현재 위치와 이동 벡터를 더해서 다음 위치 계산
+                let next_position: Option<Vec<_>> = positions.iter()
+                    .zip(walk_type.d_positions.iter())
+                    .map(|(x, dx)| *x as isize + dx)
+                    .map(|x| if x < 0 { None } else { Some(x as usize) })
+                    .collect();
+                // 다음 위치 계산 실패 시(음수 발생 등) 반복 종료
                 let Some(next_positions) = next_position else { break };
 
+                // 다음 위치가 보드 범위를 벗어나는지 확인 (board_size와 비교)
                 if next_positions.iter().zip(&self.board.board_size).any(|(x, mx)| x >= mx) { break }
 
-                if c_positions.iter().zip(&next_positions).all(|(cx, x)| cx == x) {
-                    continue
-                }
+                // 원래 위치와 다음 위치가 동일하다면, 이동하지 않은 것으로 간주하고 건너뛰기
+                if c_positions.iter().zip(&next_positions).all(|(cx, x)| cx == x) { continue }
 
+                // 현재 다음 위치에 대한 이동(step) 처리 결과 계산
                 let mut moving = self.step(next_positions.clone(), walk_type.clone());
+
+                // 이동한 결과가 모두 None이거나 다른 결과를 포함하는 경우 분기 처리
                 match moving.all_none_as_except_other() {
                     true => {
+                        // other 값이 존재하는 경우 추가 조건 검사
                         if let Some(other) = moving.other {
+                            // "attribute" 키가 존재하는지 확인
                             let Some(attribute) = other.get(&"attribute".to_string()) else {
                                 break
                             };
+                            // "jump_1" 속성이 포함되어 있고 아직 점프를 한 번도 안한 경우
                             if attribute.contains(&"jump_1".to_string()) && jump == 0 {
                                 jump += 1;
+                                // 점프 허용 후 다음 루프로 계속 진행
                                 continue
                             } else {
+                                // 그렇지 않으면 더 이상 이동 불가이므로 종료
                                 break
                             }
                         } else {
@@ -377,35 +423,48 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                         }
                     },
                     false => {
+                        // 이동 가능한 경우 현재 조각(piece) 정보와 시작 위치(c_positions)를 설정
                         moving.piece = Some(piece.clone());
                         moving.c_positions = Some(c_positions.clone());
+                        // 가능한 이동(moving)을 moves 벡터에 추가
                         moves.push(moving.clone());
                     }
                 }
+                // 다음 반복을 위해 현재 위치를 갱신
                 positions = next_positions;
             }
+            // 해당 walk_type에 대해 계산된 모든 이동 반환
             moves
         }).collect()
     }
 
+
     // 이동 규칙에 맞는 이동을 전부 검사.
     fn piece(self: Arc<Self>, positions: Vec<usize>) -> Vec<MoveType<D>> {
+        // 주어진 위치에 해당하는 체스말 정보를 가져옴.
         let Some((piece, _)) = &self.board.pieces.get(&positions) else {
-            return Vec::new()
+            return Vec::new(); // 해당 위치에 말이 없으면 빈 벡터 반환
         };
+
+        // 가져온 말의 색상과 종류를 저장
         let (board_color, board_piece_type) = (&piece.color, &piece.name);
-        // std::thread::spawn => into_par_iter()
-        // for, if => filter_map()
-        // extend() => flatten()
-        self.piece_direction.clone().into_par_iter().filter_map(|walk_type| {
-            let (piece, _other) = &walk_type;
-            let (walk_type_color, walk_type_piece_type) = (&piece.color, &piece.name);
-            if board_color == walk_type_color && board_piece_type == walk_type_piece_type {
-                Some(self.walk(positions.clone(), walk_type))
-            } else {
-                None
-            }
-        }).flatten().collect()
+
+        // 병렬 반복자로 변환하여 필터링 및 매핑 수행
+        self.piece_direction.clone()
+            .into_par_iter() // 병렬 반복자로 변환
+            .filter_map(|walk_type| {
+                let (piece, _other) = &walk_type;
+                let (walk_type_color, walk_type_piece_type) = (&piece.color, &piece.name);
+
+                // 보드 위의 말과 같은 색상과 종류인지 확인
+                if board_color == walk_type_color && board_piece_type == walk_type_piece_type {
+                    Some(self.walk(positions.clone(), walk_type)) // 조건이 맞으면 이동 경로 생성
+                } else {
+                    None // 조건이 맞지 않으면 제외
+                }
+            })
+            .flatten() // 중첩된 Vec을 평탄화하여 단일 Vec으로 변환
+            .collect() // 최종적으로 Vec<MoveType<D>> 형태로 수집
     }
 
     fn search_piece(self: Arc<Self>, deep: usize) -> CanMove<D> {
