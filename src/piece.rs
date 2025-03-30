@@ -11,7 +11,7 @@ use std::{
 use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use regex::Regex;
 use lazy_static::lazy_static;
-use lib::Dimension;
+use proc_lib::Dimension;
 
 pub type Board2D = BoardXD<2>;
 pub type MoveType2D = MoveType<2>;
@@ -20,6 +20,18 @@ pub type CalculateMoves2D<'a> = CalculateMoves<'a, 2>;
 pub type MainCalculate2D = MainCalculate<2>;
 pub type ParsePlayerInput2D = ParsePlayerInput<2>;
 pub type CanMove2D = CanMove<2>;
+
+/*
+Piece
+color_name
+short_color_name
+piece_name
+piece_short_name
+
+WalkType
+move_type: move, capture, threatened
+attributes: check, checkmate
+*/
 
 lazy_static! {
     static ref PLAYER_INPUT_RE: Regex = Regex::new(
@@ -95,7 +107,7 @@ impl Piece {
     }
 
     fn king(color: String, short_color: Vec<String>) -> Self {
-        Self::new(color, "king".to_string(), BTreeMap::from([("attributes".to_string(), vec!["check".to_string(), "threatened".to_string(), "checkmate".to_string()]), ("short_name".to_string(), vec!["K".to_string()]), ("short_color_name".to_string(), short_color)]))
+        Self::new(color, "king".to_string(), BTreeMap::from([("attributes".to_string(), vec!["check".to_string(), "checkmate".to_string()]), ("short_name".to_string(), vec!["K".to_string()]), ("short_color_name".to_string(), short_color)]))
     }
 }
 
@@ -320,13 +332,12 @@ impl WalkType2D {
 #[derive(Dimension)]
 struct CalculateMoves<'a, const D: usize> {
     board: BoardXD<D>,
-    piece_type: &'a Vec<String>,
     piece_direction: &'a HashMap<Piece, Vec<WalkType<D>>>
 }
 
 impl<'a, const D: usize> CalculateMoves<'a, D> {
-    fn new(board: BoardXD<D>, piece_type: &'a Vec<String>, piece_direction: &'a HashMap<Piece, Vec<WalkType<D>>>) -> Self {
-        Self { board, piece_type, piece_direction }
+    fn new(board: BoardXD<D>, piece_direction: &'a HashMap<Piece, Vec<WalkType<D>>>) -> Self {
+        Self { board, piece_direction }
     }
 
     fn step(&self, positions: Vec<usize>, walk_type: WalkType<D>) -> MoveType<D> {
@@ -360,7 +371,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                     }
                 }
             }
-            None => () // "move_type"이 없을 경우 아무 작업도 수행하지 않음
+            None => return MoveType::default() // "move_type"이 없을 경우 아무 작업도 수행하지 않음
         }
 
         // 기본값 반환 (이동이 불가능한 경우)
@@ -381,7 +392,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
             let mut jump = 0;
 
             // walk_type에서 지정한 횟수만큼 반복 이동을 시도
-            for _ in 0..walk_type.times {
+            'walk_loop: for _ in 0..walk_type.times {
                 // 현재 위치와 이동 벡터를 더해서 다음 위치 계산
                 let next_position: Option<Vec<_>> = positions.iter()
                     .zip(walk_type.d_positions.iter())
@@ -406,20 +417,20 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                         // other 값이 존재하는 경우 추가 조건 검사
                         if let Some(other) = moving.other {
                             // "attribute" 키가 존재하는지 확인
-                            let Some(attribute) = other.get(&"attribute".to_string()) else {
-                                break
+                            let Some(&attribute) = other.get(&"attribute".to_string()) else {
+                                break 'walk_loop
                             };
                             // "jump_1" 속성이 포함되어 있고 아직 점프를 한 번도 안한 경우
                             if attribute.contains(&"jump_1".to_string()) && jump == 0 {
                                 jump += 1;
                                 // 점프 허용 후 다음 루프로 계속 진행
-                                continue
+                                continue 'walk_loop
                             } else {
                                 // 그렇지 않으면 더 이상 이동 불가이므로 종료
-                                break
+                                break 'walk_loop
                             }
                         } else {
-                            break
+                            break 'walk_loop
                         }
                     },
                     false => {
@@ -488,7 +499,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                 // 현재 이동을 적용하여 새 보드 상태를 생성합니다.
                 let board = self.piece_moved(moving.clone());
                 // 새 보드 상태와 기존의 piece_type, piece_direction 정보를 사용해 새 인스턴스를 만듭니다.
-                let cache = Arc::new(Self::new(board, self.piece_type, self.piece_direction));
+                let cache = Arc::new(Self::new(board, self.piece_direction));
                 // 재귀 호출을 통해 다음 깊이의 탐색 결과와 현재 이동을 튜플로 반환합니다.
                 (cache.search_piece(deep - 1), moving)
             }).collect();
@@ -503,7 +514,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
             for moving in piece_search {
                 let moved_board = self.piece_moved(moving.clone());
                 // 빈 이동 목록과 함께 현재 이동의 결과를 output에 저장합니다.
-                output.insert(moving, Box::new(CanMove::CanMoves((moved_board, HashMap::new()))));
+                output.insert(moving, Box::new(CanMove::Board(moved_board)));
             }
         }
         // 최종적으로, 현재 보드 상태와 각 이동에 대한 탐색 결과가 포함된 CanMove::CanMoves를 반환합니다.
@@ -583,16 +594,16 @@ impl<const D: usize> MainCalculate<D> {
     }
 
     pub fn piece_moved(&self, move_type: MoveType<D>) -> BoardXD<D> {
-        CalculateMoves::new(self.board.clone(), &self.piece_type, &self.piece_direction).piece_moved(move_type)
+        CalculateMoves::new(self.board.clone(), &self.piece_direction).piece_moved(move_type)
     }
 
     pub fn calculate_move(&mut self, deep: usize) {
-        let calculate = Arc::new(CalculateMoves::new(self.board.clone(), &self.piece_type, &self.piece_direction));
+        let calculate = Arc::new(CalculateMoves::new(self.board.clone(), &self.piece_direction));
         self.save_moves = calculate.search_piece(deep);
     }
 
     pub fn calculate_moved(&self, deep: usize) -> CanMove<D> {
-        let calculate = Arc::new(CalculateMoves::new(self.board.clone(), &self.piece_type, &self.piece_direction));
+        let calculate = Arc::new(CalculateMoves::new(self.board.clone(), &self.piece_direction));
         calculate.search_piece(deep)
     }
 

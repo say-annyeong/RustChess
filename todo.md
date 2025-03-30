@@ -1,4 +1,4 @@
-# 할일
+# todo!
 1. 입력처리 세분화
 2. 보드 차원화 했는데 탐색 최적화
 3. WalkType, MoveType, Piece에 존재하는 other필드 수정
