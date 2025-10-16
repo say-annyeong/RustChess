@@ -22,13 +22,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let gen = {
         let target_const_params: Vec<_> = const_params.iter().filter_map(|x| {
             let const_param_name = x.ident.to_string();
-            let Type::Path(type_path) = &x.ty else {
-                return None
-            };
-            let Some(segment) = type_path.path.segments.first() else {
-                return None
-            };
-            if segment.ident == "usize" && const_param_name == "D".to_string() {
+            if const_param_name == "D".to_string() {
                 Some(x)
             } else {
                 None
@@ -37,12 +31,16 @@ pub fn derive(input: TokenStream) -> TokenStream {
         match target_const_params.len() {
             0 => return Error::new_spanned(&ast, "const D: usize가 없어 만들어 시키야").to_compile_error().into(),
             1 => {
+                let params = &ast.generics.params;
+                let type_const_params_ident: Vec<_> = params.iter().filter_map(|x| match x {
+                    GenericParam::Type(t) => Some(&t.ident),
+                    GenericParam::Const(c) => Some(&c.ident),
+                    _ => None
+                }).collect();
                 let target_param_ident = &target_const_params[0].ident;
                 let life_params_ident: Vec<_> = life_params.iter().map(|x| &x.lifetime).collect();
-                let type_params_ident: Vec<_> = type_params.iter().map(|x| &x.ident).collect();
-                let const_params_ident: Vec<_> = const_params.iter().map(|x| &x.ident).collect();
                 quote! {
-                    impl<#(#life_params,)* #(#type_params,)* #(#const_params),*> Dimension<#target_param_ident> for #name<#(#life_params_ident,)* #(#type_params_ident,)* #(#const_params_ident),*> {
+                    impl<#params> Dimension<#target_param_ident> for #name<#(#life_params_ident,)* #(#type_const_params_ident,)*> {
                         fn dimensions() -> usize { D }
                     }
                 }

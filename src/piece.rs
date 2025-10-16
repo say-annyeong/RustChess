@@ -1,25 +1,24 @@
-use std::{
-    fmt::{self, Display, Formatter},
-    collections::{
-        HashMap,
-        hash_map::Entry,
-        BTreeMap
-    },
-    sync::Arc,
-    any::Any,
-};
+// 주석 출처: 채찍피티
+
+use std::{fmt::{self, Display, Formatter}, collections::{
+    HashMap,
+    hash_map::Entry,
+    BTreeMap,
+    HashSet
+}, sync::Arc, any::Any, vec};
 use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use regex::Regex;
 use lazy_static::lazy_static;
 use proc_lib::Dimension;
 
 pub type Board2D = BoardXD<2>;
-pub type MoveType2D = MoveType<2>;
+pub type MoveType2D = MoveData<2>;
 pub type WalkType2D = WalkType<2>;
 pub type CalculateMoves2D<'a> = CalculateMoves<'a, 2>;
 pub type MainCalculate2D = MainCalculate<2>;
 pub type ParsePlayerInput2D = ParsePlayerInput<2>;
 pub type CanMove2D = CanMove<2>;
+pub type OtherMovementType = String;
 
 /*
 Piece
@@ -32,18 +31,272 @@ WalkType
 move_type: move, capture, threatened
 attributes: check, checkmate
 */
+/*
+구조 싹다 바꿔!
+*/
+
+/*
+이름: 폭군 (킹)
+능력: 템페스트 룩+나이트+퀸
+특별룰: 킹 대신 쓰며 킹이랑 똑같이 잡히면 바로 게임 끝.
+퀸이 살아 있을 때만 이동 가능.
+
+이름: 반란군 (폰)
+능력: 폰이랑 동일
+특별룰: 킹으로 프로모션 가능.
+
+이름: 암행어사
+특별룰: 기물 중 랜덤으로 암행어사가 됨. 그 기물을 잡을시 같이 잡힌다.
+
+이름 : 졸
+위, 좌, 우로 take-move 행마법
+
+이름: 드론
+행마법: 퀸이랑 동일
+특수룰: 나이트 처럼 기물을 뛰어 넘을수 있음.
+점수: 11점
+
+이름:스나이퍼 행마법:비숍과 동일 특수룰: 게임당 한번 직선상에 있는 적 하나 잡을수 있음 점수는 한 4점?
+
+이름 :아처
+행마법 : 주위 3x3 이동만 가능 주위 5x5 공격만 가능
+점수는 폰보단 높은 2점?
+
+킹과 같은 파일에 있거나 같은 랭크에있고 사이에 막는 기물이 없으면  장거리 캐슬링 가능 단,킹의 이동 경로에 체크받는 기물있으면 이동 불가하고 둘다 한번이상 움직여도 상관없이 가능
+
+이름:Telepotter
+행마법:킹과동일
+특수규칙:기본적으로 혼자이동이 불가능하지만주변8칸의 아군이있으면위치를바꾸고이동가능하고적이있으면 잡고이동가능
+
+이름:Neutrator
+행마법:아마존(마하라자)와동일
+특수규칙:색깔은회색을띠며 백턴에는백이조종하고 흑턴에는흑이조종가능
+
+이름:Gimcy
+행마법:킹과동일
+특수규칙:기물을Gimcy로잡을때마다코인획득 기물의따라 주는코인이다름
+주는코인:폰은1원,나머진 기물점수-1코인,그리고 코인으로기물구입 가능 가격은기물점수만큼 소환위치는 기물이없는칸중하나선택으로선정
+
+이름:turtle
+행마법:킹과동일
+특수규칙:수가홀수일때만움직이기 가능
+예를들어첫수는홀수이기 때문에이동가능 하지만두번째수는짝수이기 때문에이동 불가능
+
+이름:rabbit
+행마법:나이트와동일
+특수규칙:한턴에두번이동가능
+
+이름:Sea turtle
+특수규칙:전체8×8(64칸)중램덤으로40칸이바다로지정나머진육지로지정 육지위에선turtle행마법으로이동하지만 바다위에선rabbit행마법으로이동
+
+이름:Night runaway
+행마법:나이트와동일
+특수규칙:기물을뛰어넘을때 중간에있는기물을아군이든적군이든잡음그리고 이동했을때기물을 잡았으면 한번더이동가능 또잡았으면 또이동가능
+
+이름:criminal
+행마법:폰과동일
+특수규칙:적을잡을수없고프로모션이가능한데 프로모션시 적기물이됌
+
+이름:fraud
+행마법:퀸과동일
+특수규칙:적에겐 킹으로보임
+
+이름:Voice phishing
+행마법:폰과동일
+특수규칙:기물을잡을경우잡은기물로보임
+
+이름:Gambler
+특수규칙:시작시 폰,룩,비숍,나이트,퀸,킹의행마법중 랜덤으로하나로이동 한번움직일때마다 행마법이랜덤으로변경됌
+
+창작체스기물:Dragon
+행마법:퀸+나이트+카멜레온(미러링은적용하지않음)그리고다 뛰어넘을수있음
+
+기물 이름: 회귀자(returner)
+기물 행마법: 상하좌우 대각선으로 2칸 이내로 이동 + 나이트 행마법(take-move) (기물을 뛰어넘을 수 있음)
+특수규칙: 해당 기물이 잡히면 5수 전의 위치로 이동. 단, 해당 칸에 다른 기물이 존재하면 해당 기물은 회귀가 불가능하다. 5수 내로 잡혀도 회귀가 불가능하다.
+예상 점수: 잡히기 어렵다는 점을 생각 해 보았을 때 7점이 적절하다고 생각됨
+
+스펙터(Specter)
+모양: 반투명한 유령 형태, 머리 위에 작은 왕관처럼 빛나는 고리.
+행마법:
+대각선으로 한 칸 이동.
+적 기물 위를 “통과”해 다음 칸으로 갈
+수 있음(단, 착지하는 칸은 비어있어야 함).
+특징: 스펙터가 통과한 적 기물은 다음 턴 동안 움직이지 못함.
+
+포르티스(Fortis)
+모양: 성벽처럼 네모난 탑, 중앙에 빛나는 보석.
+행마법:
+룩처럼 직선으로 이동하지만 최대 3칸까지만.
+자신이 지나간 칸에 ‘방패 토큰’을 1턴 동안 남김.
+특징: 방패 토큰이 있는 칸의 아군 기물은 1턴 동안 잡히지 않음.
+
+위스퍼(Whisper)
+모양: 깃털 달린 마법 모자, 아래쪽은 바람처럼 흩날리는 형상.
+행마법:
+나이트처럼 ‘ㄱ’자로 이동.
+착지 시 그 주변 1칸(8방향) 안의 적 기물의 시야를 차단해, 그 기물은 다음 턴 동안 이동 범위가 1칸 줄어듦.
+
+이름:로그체스(로그라이크+체스)
+분류:특수룰
+룰:총 다섯 판으로 진행하며 한판에서 질때마다 '특수 능력' 3가지를 뽑는다. 그중에 하나를 뽑아 적용한다. 특수능력은... 아무렇게나 하면 되겠죠? 왠만하면 조건부로 하면 좋을듯 싶군요.
+
+이후 4판이 끝나면 마지막 결승을  시작하며 이때는 각각 플레이어의 특수 능력을 한 장식 교환한다
+
+Push
+이 행마를 가진 기물이 바라보는 방향대로, 막히지 않는 한 원하는 만큼 밀어냄
+
+기보
+F라는 기물이 e2에서 e3폰을 7랭크로 밀어냄->
+Fpe3-7
+
+예시 기물
+선풍기(Fan)
+상하좌우 1칸씩 move&push
+대각선 4방향으로 한 칸씩 take
+move와 push는 한 턴에 하나만 할 수 있음
+
+⬜️⬛️⬜️⬆️⬜️⬛️⬜️⬛️
+⬛️⬜️⬛️⬆️⬛️⬜️⬛️⬜️
+⬜️⬛️⬜️⬆️⬜️⬛️⬜️⬛️
+⬛️⬜️❌⭕❌⬜⬛⬜️
+⬅️⬅️⭕️⚛️⭕️➡️➡️➡️
+⬛️⬜❌⭕❌⬜⬛⬜️
+⬜⬛⬜⬇️⬜⬛⬜⬛️
+⬛⬜⬛⬇️⬛⬜⬛⬜️
+⭕️=move&push
+❌️=take
+⬆️⬇️⬅️➡️=push로 밀어낼 수 있는 방향
+⚛️=선풍기 이모티콘이 없음
+
+Ride
+다른 기물에 업힘(탑승함)
+
+기보
+H라는 기물이 f3퀸에 탑승함->
+Hrf3
+
+예시 기물
+매(Hawk)
+대각선 4방향 제외, 자신과 2개 떨어진 칸을 catch
+자신 주변 8칸을 ride로 이동
+move 불가
+⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ 🔺️ 🔺️ 🔺️ ⬛️ ⬜️ ⬛️
+⬛️ 🔺️⬇️⬇️⬇️🔺️ ⬛️ ⬜️
+⬜️ 🔺️⬇️🦅⬇️🔺️ ⬜️ ⬛️
+⬛️ 🔺️⬇️⬇️⬇️🔺️ ⬛️ ⬜️
+⬜️ ⬛️ 🔺️ 🔺️ 🔺️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️
+⬇️=ride
+🔺️=catch
+
+Bard
+
+행마법: 이미지
+
+아군을 공격하여 바드의 공격을 받은 아군이 한번에 한하여 한번 더 움직일수 있게 해줍니다.
+
+적은 잡지 못합니다.
+
+Thrust
+이 행마를 가진 기물은 밀어내는 방향이 막혀있지 않다면 다른 아군 기물로 밀어낼 수 있음
+
+기보
+다른 기물이 있어야 가능한 행마라 따로 표기하지 않음
+
+예시 기물
+돌덩이(Rock)
+시시포스가 계속 굴리는 그 돌
+세로로 막히지 않는 한 원하는 만큼 move&take
+단, 폰은 관통 가능
+⬜️ ⬛️ ⬜️ ⭕️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⭕️ ⬛️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⬜️ ⭕️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⭕️ ⬛️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⬜️🪨 ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⭕️ ⬛️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⬜️ ⭕️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⭕️ ⬛️ ⬜️ ⬛️ ⬜️
+⭕️=move&take
+
+아래랑 메시지 나눠놨어요
+ㅡㅡㅡ
+Anchor
+자신을 잡은 기물을 다음 턴까지(턴 수는 기물에 따라 바뀔 수 있음) 묶어둠(고정시킴)
+퀸 등 좋은 기물의 길을 막는 데 쓰임
+킹이 이 행마를 가진 기물을 잡으면 킹으로 킹을 잡을 수 있음
+
+기보
+따로 표기하지 않음
+
+예시 기물
+슬라임(Slime)
+8방향으로 move(take x)
+1턴 만큼 anchor
+⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⭕️ ⭕️ ⭕️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⭕️ 🦠 ⭕️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⭕️ ⭕️ ⭕️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️
+⭕️=move
+
+Stun
+턴을 소모해 일정 턴 동안 기물을 기절시킴(고정시킴). Hold의 하위호환.
+Hold에 비해 범위를 좀 더 넓게 잡을 수 있음
+
+기보
+L이라는 기물이 주위 8칸을 기절시킴->
+Ls
+
+예시 기물
+번개(Lightning)
+아군 포함, 주위 8칸을 한 번에 stun
+대각선으로 막히지 않는 한 원하는 만큼 move(take x)
+한 턴에 move와 stun 둘 중 하나만 가능
+⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⭕️
+⭕️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⭕️ ⬜️
+⬜️ ⭕️ ⬜️ ⬛️ ⬜️ ⭕️ ⬜️ ⬛️
+⬛️ ⬜️💫💫💫⬜️ ⬛️ ⬜️
+⬜️ ⬛️💫 ⚡️💫⬛️ ⬜️ ⬛️
+⬛️ ⬜️💫💫💫⬜️ ⬛️ ⬜️
+⬜️ ⭕️ ⬜️ ⬛️ ⬜️ ⭕️ ⬜️ ⬛️
+⭕️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⭕️ ⬜️
+⭕️=move
+💫=stun
+ㅡㅡㅡ
+그냥 기물
+신호등
+가로로 막히지 않는 한 원하는 만큼 move&take
+한 턴 마다 색이 바뀜
+초록색일 땐 세로로 한 칸 씩 move
+노란색일 땐 앞 3칸 barrier
+빨간색일 땐 앞 3칸 barrier&hold
+첫 턴에는 초록색
+⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️⏸️⬛️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⬜️⏸️⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️⏸️⬛️ ⬜️ ⬛️ ⬜️
+❌️ ❌️❌️🚦❌️ ❌️ ❌️ ❌️
+⬛️ ⬜️ ⬛️ ⭕️ ⬛️ ⬜️ ⬛️ ⬜️
+⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️
+⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️ ⬛️ ⬜️
+❌️=move&take
+⭕️=move
+⏸️=barrier&hold
+
+
+*/
 
 lazy_static! {
     static ref PLAYER_INPUT_RE: Regex = Regex::new(
         r"(?P<name>[A-Za-z]*)(?P<start_col>[A-Za-z]*)(?P<start_row>\d*)(?P<takes>[Xx]?)(?P<end_col>[A-Za-z]+)(?P<end_row>\d+)(?P<other>.*)"
     ).unwrap();
-}
-
-lazy_static!{
     static ref OTHER_MOVE_CAPTURE: HashMap<String, Vec<String>> = HashMap::from([("move_type".to_string(), vec!["move".to_string(), "capture".to_string()])]);
-}
-
-lazy_static!{
     static ref OTHER_MOVE_CAPTURE_THREATENED: HashMap<String, Vec<String>> = HashMap::from([("move_type".to_string(), vec!["move".to_string(), "capture".to_string(), "threatened".to_string()])]);
 }
 
@@ -69,8 +322,57 @@ trait Dimension<const D: usize> {
     fn dimensions() -> usize;
 }
 
-trait ParseInput<const D: usize> {
-    fn parse_player_input(&self, player_input: String) -> Vec<MoveType<D>>;
+trait ParseInput<const D: usize>: Dimension<D> {
+    fn parse_player_input(&self, player_input: String) -> Vec<MoveData<D>>;
+}
+
+#[derive(Dimension)]
+struct AbsolutePosition<const D: usize> {
+    position: Vec<usize>,
+}
+
+#[derive(Dimension)]
+struct RelativePosition<const D: usize> {
+    position: Vec<isize>,
+}
+
+struct MovingEventCondition {
+    condition: String
+}
+
+struct MovingEventAction {
+    action: String
+}
+
+struct MovingEvent<const D: usize> {
+    trigger: MovingEventTrigger,
+    condition: MovingEventCondition,
+    action: MovingEventAction,
+    moving_rule: Option<Box<MovingRule<D>>>
+}
+
+#[derive(Dimension)]
+struct MovingRule<const D: usize> {
+    c_positions: RelativePosition<D>,
+    d_positions: RelativePosition<D>,
+    repeat: usize,
+    moving_event: MovingEvent<D>
+}
+
+impl Iterator for MovingRule<2> {
+    type Item = AbsolutePosition<2>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_move()
+    }
+}
+
+#[derive(Dimension)]
+struct MoveType<const D: usize> {
+    c_positions: AbsolutePosition<D>,
+    moving_rule: MovingRule<D>,
+    default_movement_type: HashSet<DefaultMovementType>,
+    custom_movement_type: HashSet<CustomMovementType>,
+    other_movement_type: HashSet<OtherMovementType>,
 }
 
 /// 칸의 기물 정보를 위한 구조체.
@@ -191,7 +493,7 @@ impl Display for Board2D {
 /// ```
 ///
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Default, Dimension)]
-pub struct MoveType<const D: usize> {
+pub struct MoveData<const D: usize> {
     c_positions: Option<Vec<usize>>,
     positions: Option<Vec<usize>>,
     move_type: Option<String>,
@@ -200,7 +502,7 @@ pub struct MoveType<const D: usize> {
     other: Option<BTreeMap<String, Vec<String>>>
 }
 
-impl<const D: usize> MoveType<D> {
+impl<const D: usize> MoveData<D> {
     pub fn new(c_positions: Option<Vec<usize>>, positions: Option<Vec<usize>>, move_type: Option<String>,
                piece: Option<Piece>, takes_piece: Option<Piece>, other: Option<BTreeMap<String, Vec<String>>>) -> Self {
         Self { c_positions, positions, move_type, piece, takes_piece, other }
@@ -340,7 +642,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
         Self { board, piece_direction }
     }
 
-    fn step(&self, positions: Vec<usize>, walk_type: WalkType<D>) -> MoveType<D> {
+    fn step(&self, positions: Vec<usize>, walk_type: WalkType<D>) -> MoveData<D> {
         // `walk_type`의 `other` 맵에서 "move_type" 키에 해당하는 값을 가져옴
         match walk_type.other.get(&"move_type".to_string()) {
             Some(move_type) => {
@@ -348,7 +650,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                 if let Some((piece, _other)) = self.board.pieces.get(&positions) {
                     // "move_type"에 "capture"가 포함된 경우, 상대 기물을 잡는 이동을 생성
                     if move_type.contains(&"capture".to_string()) {
-                        return MoveType::new(
+                        return MoveData::new(
                             None,                          // 이동 전 위치 없음
                             Some(positions),               // 이동 후 위치
                             Some("x".into()),              // 캡처(move type: "x")
@@ -360,7 +662,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                 } else {
                     // 해당 위치에 기물이 없을 경우 "move" 이동을 확인
                     if move_type.contains(&"move".to_string()) {
-                        return MoveType::new(
+                        return MoveData::new(
                             None,                          // 이동 전 위치 없음
                             Some(positions),               // 이동 후 위치
                             Some("m".into()),              // 일반 이동(move type: "m")
@@ -371,15 +673,15 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                     }
                 }
             }
-            None => return MoveType::default() // "move_type"이 없을 경우 아무 작업도 수행하지 않음
+            None => return MoveData::default() // "move_type"이 없을 경우 아무 작업도 수행하지 않음
         }
 
         // 기본값 반환 (이동이 불가능한 경우)
-        MoveType::default()
+        MoveData::default()
     }
 
 
-    fn walk(&self, c_positions: Vec<usize>, piece_walk_types: (Piece, Vec<WalkType<D>>)) -> Vec<MoveType<D>> {
+    fn walk(&self, c_positions: Vec<usize>, piece_walk_types: (Piece, Vec<WalkType<D>>)) -> Vec<MoveData<D>> {
         // 인자로 받은 piece와 해당하는 walk_type들을 분리
         let (piece, walk_types) = piece_walk_types;
 
@@ -417,7 +719,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
                         // other 값이 존재하는 경우 추가 조건 검사
                         if let Some(other) = moving.other {
                             // "attribute" 키가 존재하는지 확인
-                            let Some(&attribute) = other.get(&"attribute".to_string()) else {
+                            let Some(attribute) = other.get(&"attribute".to_string()) else {
                                 break 'walk_loop
                             };
                             // "jump_1" 속성이 포함되어 있고 아직 점프를 한 번도 안한 경우
@@ -449,9 +751,8 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
         }).collect()
     }
 
-
     // 이동 규칙에 맞는 이동을 전부 검사.
-    fn piece(self: Arc<Self>, positions: Vec<usize>) -> Vec<MoveType<D>> {
+    fn piece(self: Arc<Self>, positions: Vec<usize>) -> Vec<MoveData<D>> {
         // 주어진 위치에 해당하는 체스말 정보를 가져옴.
         let Some((piece, _)) = &self.board.pieces.get(&positions) else {
             return Vec::new(); // 해당 위치에 말이 없으면 빈 벡터 반환
@@ -521,7 +822,7 @@ impl<'a, const D: usize> CalculateMoves<'a, D> {
         CanMove::CanMoves((self.board.clone(), output))
     }
 
-    fn piece_moved(&self, move_type: MoveType<D>) -> BoardXD<D> {
+    fn piece_moved(&self, move_type: MoveData<D>) -> BoardXD<D> {
         // 현재 보드를 복제하여 수정 가능한 버퍼를 생성합니다.
         let mut buffer = self.board.clone();
 
@@ -580,7 +881,7 @@ impl<const D: usize> MainCalculate<D> {
         Self { board, piece_type, piece_direction, save_moves }
     }
 
-    pub fn piece_move(&mut self, move_type: MoveType<D>) {
+    pub fn piece_move(&mut self, move_type: MoveData<D>) {
         if let (Some(c_positions), Some(positions)) = (move_type.c_positions, move_type.positions) {
             let buffer = &mut self.board.pieces;
             if buffer.contains_key(&c_positions) {
@@ -593,7 +894,7 @@ impl<const D: usize> MainCalculate<D> {
         }
     }
 
-    pub fn piece_moved(&self, move_type: MoveType<D>) -> BoardXD<D> {
+    pub fn piece_moved(&self, move_type: MoveData<D>) -> BoardXD<D> {
         CalculateMoves::new(self.board.clone(), &self.piece_direction).piece_moved(move_type)
     }
 
@@ -620,11 +921,11 @@ impl Default for MainCalculate2D {
 
 #[derive(Dimension)]
 pub struct ParsePlayerInput<const D: usize> {
-    moves: Vec<MoveType<D>>
+    moves: Vec<MoveData<D>>
 }
 
 impl<const D: usize> ParsePlayerInput<D> {
-    pub fn new(moves: Vec<MoveType<D>>) -> Self {
+    pub fn new(moves: Vec<MoveData<D>>) -> Self {
         Self { moves }
     }
 }
@@ -676,7 +977,7 @@ impl ParsePlayerInput2D {
 
             can_moves.into_iter().cloned().collect()
         } else {
-            vec![MoveType::other(Some(BTreeMap::from([("player_input".to_string(), vec![player_input])])))]
+            vec![MoveData::other(Some(BTreeMap::from([("player_input".to_string(), vec![player_input])])))]
         }
     }
 }
@@ -697,13 +998,13 @@ impl ParsePlayerInput2D {
 /// - `None`: 기본값을 나타낼 때 사용됩니다. 기본값을 설정할 때 사용됩니다.
 #[derive(Clone, Debug, Default, Dimension)]
 pub enum CanMove<const D: usize> {
-    CanMoves((BoardXD<D>, HashMap<MoveType<D>, Box<Self>>)),
+    CanMoves((BoardXD<D>, HashMap<MoveData<D>, Box<Self>>)),
     Board(BoardXD<D>),
     #[default] None
 }
 
 impl<const D: usize> CanMove<D> {
-    pub fn as_can_moves(&self) -> Option<&(BoardXD<D>, HashMap<MoveType<D>, Box<CanMove<D>>>)> {
+    pub fn as_can_moves(&self) -> Option<&(BoardXD<D>, HashMap<MoveData<D>, Box<CanMove<D>>>)> {
         match self {
             Self::CanMoves(moves) => Some(moves),
             _ => None
@@ -724,6 +1025,34 @@ impl<const D: usize> CanMove<D> {
             _ => None
         }
     }
+}
+
+#[derive(Default)]
+enum DefaultMovementType {
+    #[default]
+    None,
+    Move,
+    Take,
+}
+
+#[derive(Default)]
+enum CustomMovementType {
+    #[default]
+    None,
+    Catch,
+    Jump,
+    Void,
+    Hold,
+    Barrier,
+    Transfer,
+    Overlap,
+    Shift
+}
+
+#[derive(Default)]
+enum MovingEventTrigger {
+    #[default]
+    None
 }
 
 pub fn default_board() -> Board2D {
@@ -810,12 +1139,12 @@ pub fn check_move_2d(moves: Vec<&MoveType2D>, player_input: String) -> Option<Ve
     todo!()
 }
 
-pub fn check_move<const D: usize>(moves: Vec<&MoveType<D>>, player_input: String) -> Vec<MoveType<D>> {
+pub fn check_move<const D: usize>(moves: Vec<&MoveData<D>>, player_input: String) -> Vec<MoveData<D>> {
     let parse_move = ParsePlayerInput::new(moves.into_iter().cloned().collect());
     //parse_move.parse_player_input(player_input)
     todo!()
 }
 
-fn custom_check_move<const D: usize>(board: BoardXD<D>, piece_type: Vec<String>, piece_move: HashMap<Piece, Vec<WalkType<D>>>, player_input: String) -> Vec<MoveType<D>> {
+fn custom_check_move<const D: usize>(board: BoardXD<D>, piece_type: Vec<String>, piece_move: HashMap<Piece, Vec<WalkType<D>>>, player_input: String) -> Vec<MoveData<D>> {
     check_move(custom_calculate_moved(board, piece_type, piece_move, 1).as_can_moves().unwrap().1.keys().collect(), player_input)
 }
