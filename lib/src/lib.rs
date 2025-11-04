@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+use std::arch::x86_64::__cpuid;
 use quote::quote;
 use syn::{DeriveInput, parse_macro_input, GenericParam, Error, Type};
 
@@ -7,17 +8,17 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let name = &ast.ident;
 
-    let mut life_params = Vec::new();
-    let mut type_params = Vec::new();
-    let mut const_params = Vec::new();
-
-    for param in &ast.generics.params {
-        match param {
-            GenericParam::Lifetime(lifetime) => life_params.push(lifetime),
-            GenericParam::Type(type_param) => type_params.push(type_param),
-            GenericParam::Const(const_param) => const_params.push(const_param)
+    let (lifetime_params, type_params, const_params) = &ast.generics.params.iter().fold(
+        (Vec::new(), Vec::new(), Vec::new()),
+        |(mut lifetime_params, mut type_params, mut const_params), param| {
+            match param {
+                GenericParam::Lifetime(lifetime_param) => lifetime_params.push(lifetime_param),
+                GenericParam::Type(type_param) => type_params.push(type_param),
+                GenericParam::Const(const_param) => const_params.push(const_param)
+            }
+            (lifetime_params, type_params, const_params)
         }
-    }
+    );
 
     let gen = {
         let target_const_params: Vec<_> = const_params.iter().filter_map(|x| {
@@ -32,15 +33,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
             0 => return Error::new_spanned(&ast, "const D: usize가 없어 만들어 시키야").to_compile_error().into(),
             1 => {
                 let params = &ast.generics.params;
-                let type_const_params_ident: Vec<_> = params.iter().filter_map(|x| match x {
-                    GenericParam::Type(t) => Some(&t.ident),
-                    GenericParam::Const(c) => Some(&c.ident),
-                    _ => None
-                }).collect();
+
                 let target_param_ident = &target_const_params[0].ident;
-                let life_params_ident: Vec<_> = life_params.iter().map(|x| &x.lifetime).collect();
+                let life_params_ident: Vec<_> = lifetime_params.iter().map(|x| &x.lifetime).collect();
+                let type_param_ident: Vec<_> = type_params.iter().map(|x| &x.ident).collect();
+                let const_param_ident: Vec<_> = const_params.iter().map(|x| &x.ident).collect();
+
                 quote! {
-                    impl<#params> Dimension<#target_param_ident> for #name<#(#life_params_ident,)* #(#type_const_params_ident,)*> {
+                    impl<#params> Dimension<#target_param_ident> for #name<#(#life_params_ident,)* #(#type_param_ident,)* #(#const_param_ident,)*> {
                         fn dimensions() -> usize { D }
                     }
                 }

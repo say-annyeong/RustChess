@@ -6,6 +6,7 @@ version = 4
 name = "RustChess"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "lazy_static",
  "proc_lib",
  "rayon",
@@ -20,6 +21,12 @@ checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "anyhow"
+version = "1.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "crossbeam-deque"
