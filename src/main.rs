@@ -1,10 +1,17 @@
 mod piece;
+mod position;
+mod traits;
+mod movement;
+mod file_scan;
+mod macros;
+mod buf;
 
 use std::io::{stdin, BufRead, Write};
 use std::fs::File;
-use crate::piece::{MainCalculate2D, ParsePlayerInput2D};
+// use crate::piece::{MainCalculate2D, ParsePlayerInput2D};
 
 fn main() {
+    /*
     let mut play_board = MainCalculate2D::default();
     println!("{}", play_board.board);
     let read = stdin().lock().lines();
@@ -19,4 +26,5 @@ fn main() {
     let input = reader.next().unwrap();
     let parse_input = parse_player_input.parse_player_input(input);
     println!("parse input: {:?}", parse_input);
+    */
 }

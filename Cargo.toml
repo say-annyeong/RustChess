@@ -9,3 +9,5 @@ regex = "1.11.1"
 lazy_static = "1.5.0"
 anyhow = "1.0.100"
 proc_lib = { path = "lib" }
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = { version = "1.0.128" }

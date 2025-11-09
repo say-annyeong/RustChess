@@ -1,7 +1,6 @@
 use proc_macro::TokenStream;
-use std::arch::x86_64::__cpuid;
 use quote::quote;
-use syn::{DeriveInput, parse_macro_input, GenericParam, Error, Type};
+use syn::{DeriveInput, parse_macro_input, GenericParam, Error};
 
 #[proc_macro_derive(Dimension)]
 pub fn derive(input: TokenStream) -> TokenStream {
