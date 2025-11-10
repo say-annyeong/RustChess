@@ -1,7 +1,3 @@
-use std::{
-    convert::{TryFrom, TryInto},
-    ops::{Deref, DerefMut, Add, AddAssign, Sub, SubAssign, MulAssign, Mul},
-};
 use crate::{
     traits::Dimension,
     piece::Piece,

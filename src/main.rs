@@ -1,4 +1,5 @@
 mod piece;
+mod code;
 mod position;
 mod traits;
 mod movement;

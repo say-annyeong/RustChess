@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Iter;
 use crate::position::RelativePosition;
 
 type MovementType = String;
-type State = String;
+type StateType = String;
 
 /// ## IndependentMove
 /// IndependentMove
@@ -12,9 +12,9 @@ struct IndependentMove<const D: usize> {
     offest: RelativePosition<D>
 }
 
-/// ## StateDependentMove
-/// StateDependentMove
-struct StateDependentMove<const D: usize> {
+/// ## DependentMove
+/// DependentMove
+struct DependentMove<const D: usize> {
     movement_type: IndependentMove<D>,
     start_offest: RelativePosition<D>,
     state: State,
@@ -22,7 +22,7 @@ struct StateDependentMove<const D: usize> {
     times: usize
 }
 
-impl<const D: usize> Iterator for StateDependentMove<D> {
+impl<const D: usize> Iterator for DependentMove<D> {
     type Item = IndependentMove<D>;
 
     fn next(&mut self) -> Option<IndependentMove<D>> {
@@ -30,10 +30,17 @@ impl<const D: usize> Iterator for StateDependentMove<D> {
             return None;
         }
         self.times += 1;
-        state_define(&self.start_offest, &self.movement_type, &self.state)
+        self.state.state_define(&self.start_offest, &self.movement_type)
     }
 }
 
-fn state_define<const D: usize>(start_move: &RelativePosition<D>, delta_move: &IndependentMove<D>, state: &State) -> Option<IndependentMove<D>> {
-    None
+pub struct State {
+    states: HashMap<StateType, String>,
+    states_code: HashMap<StateType, String>,
+}
+
+impl State {
+    pub fn state_define<const D: usize>(&self, start_move: &RelativePosition<D>, delta_move: &IndependentMove<D>) -> Option<IndependentMove<D>> {
+        None
+    }
 }
