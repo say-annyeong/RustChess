@@ -130,7 +130,7 @@ pub enum Symbol {
 }
 
 impl Token {
-    pub fn is_identifier(&self) -> bool {
+    pub const fn is_identifier(&self) -> bool {
         matches!(self, Token::TypeValue(TypeValue::Identifier(_)))
     }
 }
@@ -269,6 +269,39 @@ impl TypeName {
 impl Display for TypeName {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl TypeValue {
+    pub const fn get_type(&self) -> TypeName {
+        match *self {
+            TypeValue::None => TypeName::None,
+            TypeValue::I8(_) => TypeName::I8,
+            TypeValue::I16(_) => TypeName::I16,
+            TypeValue::I32(_) => TypeName::I32,
+            TypeValue::I64(_) => TypeName::I64,
+            TypeValue::U8(_) => TypeName::U8,
+            TypeValue::U16(_) => TypeName::U16,
+            TypeValue::U32(_) => TypeName::U32,
+            TypeValue::U64(_) => TypeName::U64,
+            TypeValue::QuotedString(_) => TypeName::QuotedString,
+            TypeValue::Bool(_) => TypeName::Bool,
+            _ => panic!("Type is not a valid type"),
+        }
+    }
+
+    pub const fn as_i32(&self) -> i32 {
+        match *self {
+            TypeValue::I32(n) => n,
+            _ => panic!("Type is not an i32"),
+        }
+    }
+
+    pub const fn as_bool(&self) -> bool {
+        match *self {
+            TypeValue::Bool(n) => n,
+            _ => panic!("Type is not a bool"),
+        }
     }
 }
 

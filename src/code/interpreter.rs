@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::code::lexer::lexer;
-use crate::code::token::{Token, TypeName, TypeValue};
+use crate::code::token::{Logical, Token, TypeName, TypeValue};
 use crate::code::parser::{AbstractSyntaxTree, Parser};
 
 type FunctionID = u32;
@@ -12,28 +12,13 @@ pub struct Interpreter {
     functions: HashMap<FunctionID, AbstractSyntaxTree>,
     variables: HashMap<Variable, Token>,
     function_id: FunctionID,
-    start_function_id: FunctionID
+    start_function_id: FunctionID,
+    cur_function: FunctionID
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { function_map: HashMap::new(), functions: HashMap::new(), variables: HashMap::new(), function_id: 0, start_function_id: 0 }
-    }
-    
-    pub fn run_repl(&mut self) {
-        loop {
-            let tokens = lexer(&input);
-            let abstract_syntax_tree = Parser::new(&tokens).parse_statements(Token::TypeName(TypeName::None));
-            match abstract_syntax_tree {
-                Ok(AbstractSyntaxTree) => {
-                    self.run_function(AbstractSyntaxTree, vec![]);
-                }
-                Err(e) => {
-                    println!("Error: {:?}", e);
-                }
-                _ => println!("Unknown Error occured"),
-            }
-        }
+        Self { function_map: HashMap::new(), functions: HashMap::new(), variables: HashMap::new(), function_id: 0, start_function_id: 0, cur_function: 0 }
     }
 
     pub fn pre_run(&mut self, program: Vec<AbstractSyntaxTree>) {
@@ -98,14 +83,8 @@ impl Interpreter {
                         .expect("Function not found");
                     func.function_insert_variable(
                         name.clone(),
-                        lexer::Token::TypeValue(getten_value),
+                        Token::TypeValue(getten_value),
                     );
-                }
-                AbstractSyntaxTree::Print { value } => {
-                    print!("{}", self.eval_expr(&value));
-                }
-                AbstractSyntaxTree::Println { value } => {
-                    println!("{}", self.eval_expr(&value));
                 }
                 AbstractSyntaxTree::For {
                     start,
