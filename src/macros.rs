@@ -260,7 +260,7 @@ macro_rules! impl_ops_add_sub_mul_assign {
 }
 
 #[macro_export]
-macro_rules! impl_from_try_from {
+macro_rules! impl_convert_from_try_from {
     ($(($t:ident, $field_name:ident, $from_type:ty)),*) => {
         $(
             impl<const D: usize> From<[$from_type; D]> for $t<D> {
