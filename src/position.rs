@@ -35,7 +35,7 @@ pub struct RelativePosition<const D: usize> {
 impl_add_sub_mul!((AbsolutePosition, position), (RelativePosition, offset));
 impl_ops_add_sub_mul_assign!((AbsolutePosition, position), (RelativePosition, offset));
 impl_ops_refs!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
-impl_from_try_from!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
+impl_convert_from_try_from!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
 impl_try_from_iterator!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
 
 impl<const D: usize> AbsolutePosition<D> {
