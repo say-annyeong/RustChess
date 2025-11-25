@@ -1,0 +1,5 @@
+// stdlib/list/mod.oxy
+
+// Exports from this module:
+// (Currently uses built-in methods like .length, .contains())
+// Future: could add functions like sort, find, etc. 
