@@ -3,7 +3,7 @@ use std::{
     slice::Iter,
 };
 use std::collections::HashMap;
-use crate::code::token::*;
+use crate::old_code::token::*;
 
 pub struct Parser<'a> {
     tokens: Peekable<Cloned<Iter<'a, Token>>>

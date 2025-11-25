@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use crate::code::token::{Assign, Logical, Operator, Statement, Symbol, Token, TypeName, TypeValue};
+use crate::old_code::token::{Assign, Logical, Operator, Statement, Symbol, Token, TypeName, TypeValue};
 
 pub struct Lexer {
     tokens: Vec<Token>,
@@ -151,7 +151,7 @@ pub fn lexer(code: &str) -> Vec<Token> {
                 //"->" => Token::Symbol(Symbol::Arrow),
                 //"::" => Token::Symbol(Symbol::DoubleColon),
                 "return" => Token::Statement(Statement::Return),
-                "import" => Token::Statement(Statement::Import),
+                // "import" => Token::Statement(Statement::Import),
                 //"==" => Token::Logical(Logical::Equals),
                 //"!=" => Token::Logical(Logical::NotEquals),
                 "if" => Token::Statement(Statement::If),
@@ -211,7 +211,7 @@ pub fn lexer(code: &str) -> Vec<Token> {
                 //"->" => Token::Symbol(Symbol::Arrow),
                 //"::" => Token::Symbol(Symbol::DoubleColon),
                 "return" => Token::Statement(Statement::Return),
-                "import" => Token::Statement(Statement::Import),
+                //"import" => Token::Statement(Statement::Import),
                 //"==" => Token::Logical(Logical::Equals),
                 //"!=" => Token::Logical(Logical::NotEquals),
                 "if" => Token::Statement(Statement::If),

@@ -1,17 +1,18 @@
-mod piece;
-mod code;
-mod position;
-mod traits;
-mod movement;
-mod file_scan;
-mod macros;
-mod buf;
+use oxygen;
+// mod piece;
+// mod position;
+// mod traits;
+// mod movement;
+// mod file_scan;
+// mod macros;
+// mod buf;
 
 use std::io::{stdin, BufRead, Write};
 use std::fs::File;
 // use crate::piece::{MainCalculate2D, ParsePlayerInput2D};
 
 fn main() {
+    oxygen::main()
     /*
     let mut play_board = MainCalculate2D::default();
     println!("{}", play_board.board);
