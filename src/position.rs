@@ -35,14 +35,14 @@ pub struct RelativePosition<const D: usize> {
 impl_add_sub_mul!((AbsolutePosition, position), (RelativePosition, offset));
 impl_ops_add_sub_mul_assign!((AbsolutePosition, position), (RelativePosition, offset));
 impl_ops_refs!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
-impl_from_try_from!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
+impl_convert_from_try_from!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
 impl_try_from_iterator!((AbsolutePosition, position, usize), (RelativePosition, offset, isize));
 
 impl<const D: usize> AbsolutePosition<D> {
     pub const fn to_relative(&self, target: &Self) -> RelativePosition<D> {
         let mut offset = [0; D];
         let mut i = 0;
-        while 0 < D {
+        while i < D {
             offset[i] = target.position[i] as isize - self.position[i] as isize;
             i += 1;
         }
@@ -52,7 +52,7 @@ impl<const D: usize> AbsolutePosition<D> {
     pub const fn add_absolute(&self, rel: &RelativePosition<D>) -> Option<Self> {
         let mut position = [0; D];
         let mut i = 0;
-        while 0 < D {
+        while i < D {
             let new_pos = self.position[i] as isize + rel.offset[i];
             if new_pos.is_negative() {
                 return None;
