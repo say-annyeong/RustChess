@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::{
     traits::Dimension,
     piece::Piece,
@@ -80,7 +81,8 @@ impl<const D: usize> Dimension<D> for RelativePosition<D> {}
 
 /// ## Board
 /// Board는 와샌즈합니다(?)
-enum Board {
-    Board(Piece),
-    Line(Vec<Self>)
+struct Board<const D: usize> {
+    board: HashMap<AbsolutePosition<D>, Piece>,
+    min_position: AbsolutePosition<D>,
+    max_position: AbsolutePosition<D>
 }

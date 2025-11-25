@@ -73,7 +73,7 @@ pub enum Statement {
     For,
     While,
     Function,
-    Import,
+    // Import,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -89,7 +89,6 @@ pub enum TypeName {
     U64,
     QuotedString,
     Bool,
-    Float,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -235,7 +234,7 @@ impl Statement {
             Statement::For => "for",
             Statement::While => "while",
             Statement::Function => "fn",
-            Statement::Import => "import",
+            // Statement::Import => "import",
         }
     }
 }
@@ -261,7 +260,7 @@ impl TypeName {
             TypeName::U64 => "u64",
             TypeName::QuotedString => "string",
             TypeName::Bool => "bool",
-            TypeName::Float => "float",
+            // TypeName::Float => "float",
         }
     }
 }

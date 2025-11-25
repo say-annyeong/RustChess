@@ -1,4 +1,4 @@
-use crate::code;
+use crate::hydrogen_dioxide;
 use crate::movement::State;
 
 pub struct Piece {
