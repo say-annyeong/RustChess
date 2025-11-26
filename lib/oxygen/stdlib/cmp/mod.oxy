@@ -1,6 +1,0 @@
-// stdlib/cmp/mod.oxy
-
-export ord;
-
-// Exports from this module:
-// - ord (max, min) 
