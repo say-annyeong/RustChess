@@ -1,4 +1,4 @@
-use oxygen;
+use hydrogen_dioxide;
 // mod piece;
 // mod position;
 // mod traits;
@@ -12,7 +12,7 @@ use std::fs::File;
 // use crate::piece::{MainCalculate2D, ParsePlayerInput2D};
 
 fn main() {
-    oxygen::main()
+    hydrogen_dioxide::main()
     /*
     let mut play_board = MainCalculate2D::default();
     println!("{}", play_board.board);
